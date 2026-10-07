@@ -487,7 +487,7 @@ const Costing = () => {
                     <input type="number" value={cmCost || ''} onChange={(e) => setCmCost(e.target.value)} placeholder="0.00" className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10" />
                   </div>
                   <div className="grid grid-cols-3 gap-3 items-center">
-                    <label className="text-xs text-slate-400 uppercase">Factory Overhead Cost</label>
+                    <label className="text-xs text-slate-400 uppercase">Cutting Chaeges</label>
                     <input type="number" value={overheadCost || ''} onChange={(e) => setOverheadCost(e.target.value)} placeholder="0.00" className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10" />
                   </div>
                 </div>

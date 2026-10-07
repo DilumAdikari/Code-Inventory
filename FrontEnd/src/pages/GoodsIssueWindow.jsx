@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Loader2, ArrowLeft, Send, CheckCircle, AlertCircle, Package, Save } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, CheckCircle, AlertCircle, Package, Save, Printer } from 'lucide-react';
 
 const GoodsIssueWindow = () => {
   const { id } = useParams();
@@ -12,6 +12,7 @@ const GoodsIssueWindow = () => {
   const [stocks, setStocks] = useState([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [editableItems, setEditableItems] = useState([]);
+  const [cmCost, setCmCost] = useState(0); // 🌟 CM Cost State එක
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [approvaling, setApprovaling] = useState(false);
@@ -21,10 +22,12 @@ const GoodsIssueWindow = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [issueRes, whRes, stockRes] = await Promise.all([
+        const [issueRes, whRes, stockRes, costingRes, poRes] = await Promise.all([
           axios.get('http://192.168.1.30:5003/api/material-issues'),
           axios.get('http://192.168.1.30:5003/api/warehouses'),
-          axios.get('http://192.168.1.30:5003/api/stocks').catch(() => ({ data: [] }))
+          axios.get('http://192.168.1.30:5003/api/stocks').catch(() => ({ data: [] })),
+          axios.get('http://192.168.1.30:5003/api/costing').catch(() => ({ data: [] })),
+          axios.get('http://192.168.1.30:5003/api/production-orders').catch(() => ({ data: [] }))
         ]);
 
         const currentIssue = issueRes.data.find(i => i._id === id);
@@ -34,7 +37,37 @@ const GoodsIssueWindow = () => {
           setSelectedWarehouse(currentIssue.warehouse._id || currentIssue.warehouse);
         }
 
-        // ✅ setup editable items — issueQty defaults to allocatedQty
+        // 🌟 Production Order සහ Sales Order හරහා අදාළ Costing එකෙන් CM Cost එක ලබා ගැනීම
+        if (currentIssue) {
+          let matchedCosting = null;
+          const poId = currentIssue.productionOrder?._id || currentIssue.productionOrder;
+          const soId = currentIssue.salesOrder?._id || currentIssue.salesOrder;
+
+          // 1. Production Order එක හරහා Costing එක සෙවීම
+          if (poId) {
+            const currentPo = poRes.data.find(p => String(p._id) === String(poId));
+            const poSoId = currentPo?.salesOrder?._id || currentPo?.salesOrder;
+            
+            matchedCosting = costingRes.data.find(c => {
+              const cPoId = c.productionOrder?._id || c.productionOrder;
+              const cSoId = c.salesOrder?._id || c.salesOrder;
+              return (cPoId && String(cPoId) === String(poId)) || (poSoId && cSoId && String(cSoId) === String(poSoId));
+            });
+          }
+
+          // 2. නැතහොත් Sales Order එක හරහා සෙවීම
+          if (!matchedCosting && soId) {
+            matchedCosting = costingRes.data.find(c => {
+              const cSoId = c.salesOrder?._id || c.salesOrder;
+              return cSoId && String(cSoId) === String(soId);
+            });
+          }
+
+          if (matchedCosting) {
+            setCmCost(Number(matchedCosting.cmCost || matchedCosting.totalCmCost || 0));
+          }
+        }
+
         if (currentIssue?.items) {
           setEditableItems(currentIssue.items.map(item => ({
             materialId: item.material?._id || item.material,
@@ -60,44 +93,27 @@ const GoodsIssueWindow = () => {
     fetchData();
   }, [id]);
 
-  // ✅ get available stock for material/color in selected warehouse
   const getAvailableStock = (materialId, colorId) => {
     if (!materialId || !selectedWarehouse) return 0;
-
     const stockEntry = stocks.find(s => {
       const sMatId = s.material?._id || s.material;
-      const sColId = s.color?._id || s.color;
       const sWhId = s.warehouse?._id || s.warehouse;
-
-      return String(sMatId) === String(materialId) &&
-             String(sColId) === String(colorId) &&
-             String(sWhId) === String(selectedWarehouse);
+      return String(sMatId) === String(materialId) && String(sWhId) === String(selectedWarehouse);
     });
-
     return stockEntry ? Number(stockEntry.qty || 0) : 0;
   };
 
-  // ✅ handle issue qty change with validation
   const handleIssueQtyChange = (index, value) => {
     const numValue = Number(value) || 0;
     const item = editableItems[index];
-    const availableStock = getAvailableStock(item.materialId, item.colorId);
 
-    // ✅ VALIDATION 1 — cannot be negative
     if (numValue < 0) {
       alert("Issue quantity cannot be negative.");
       return;
     }
 
-    // ✅ VALIDATION 2 — cannot exceed allocated qty
     if (numValue > item.allocatedQty) {
       alert(`Cannot issue more than Allocated Quantity (${item.allocatedQty.toLocaleString()}).`);
-      return;
-    }
-
-    // ✅ VALIDATION 3 — cannot exceed available stock
-    if (numValue > availableStock) {
-      alert(`⚠️ Insufficient Stock!\n\nAvailable in warehouse: ${availableStock.toLocaleString()}\nRequested: ${numValue.toLocaleString()}`);
       return;
     }
 
@@ -106,7 +122,6 @@ const GoodsIssueWindow = () => {
     setEditableItems(updated);
   };
 
-  // ✅ Save Draft
   const handleSaveDraft = async () => {
     if (!selectedWarehouse) {
       alert("Please select a warehouse.");
@@ -130,17 +145,6 @@ const GoodsIssueWindow = () => {
         }
       );
       alert("Draft saved successfully.");
-      setIssueData(prev => ({
-        ...prev,
-        warehouse: { _id: selectedWarehouse },
-        items: editableItems.map(item => ({
-          material: { _id: item.materialId, materialName: item.materialName, itemCode: item.itemCode },
-          color: { _id: item.colorId, name: item.colorName },
-          uom: item.uom,
-          allocatedQty: item.allocatedQty,
-          issuedQty: item.issueQty
-        }))
-      }));
     } catch (err) {
       console.error("❌ Save failed:", err);
       alert("Failed to save draft.");
@@ -149,7 +153,6 @@ const GoodsIssueWindow = () => {
     }
   };
 
-  // ✅ Submit for Approval — save items first, then submit
   const handleSubmitForApproval = async () => {
     if (!issueData?.workflow) {
       alert("No workflow assigned to this issue. Please recreate with a workflow.");
@@ -161,25 +164,17 @@ const GoodsIssueWindow = () => {
       return;
     }
 
-    // ✅ validate all items
     for (let item of editableItems) {
       if (item.issueQty <= 0) {
         alert(`Please enter Issue Qty for ${item.materialName}.`);
         return;
       }
-      const availableStock = getAvailableStock(item.materialId, item.colorId);
-      if (item.issueQty > availableStock) {
-        alert(`Insufficient stock for ${item.materialName}. Available: ${availableStock}, Requested: ${item.issueQty}`);
-        return;
-      }
     }
 
-    if (!window.confirm("Submit this Material Issue for approval? This will lock the issue quantities.")) return;
+    if (!window.confirm("Submit this Material Issue for approval?")) return;
 
     try {
       setApprovaling(true);
-
-      // ✅ save latest items
       await axios.put(
         `http://192.168.1.30:5003/api/material-issues/update-items/${id}`,
         {
@@ -195,7 +190,6 @@ const GoodsIssueWindow = () => {
         }
       );
 
-      // ✅ submit for approval
       const res = await axios.post(
         `http://192.168.1.30:5003/api/material-issues/submit-approval/${id}`,
         { createdBy: currentUsername }
@@ -228,252 +222,219 @@ const GoodsIssueWindow = () => {
   const isPendingApproval = issueData.status === 'Pending Approval';
   const isDraft = issueData.status === 'PENDING_ISSUE' || issueData.status === 'DRAFT';
 
-  const totalAllocated = editableItems.reduce((sum, i) => sum + Number(i.allocatedQty || 0), 0);
   const totalIssue = editableItems.reduce((sum, i) => sum + Number(i.issueQty || 0), 0);
 
+  const warehouseName = issueData.warehouse?.warehouseName ||
+    warehouses.find(w => w._id === (issueData.warehouse?._id || issueData.warehouse))?.warehouseName ||
+    'Main Store';
+
+  // 🌟 Factory Master එකෙන් පැමිණි Plant / Factory නම ලබා ගැනීම
+  const plantName = issueData.plant?.factoryName || issueData.plant?.name || issueData.plant?.factoryCode || 'N/A';
+
   return (
-    <div className="w-full space-y-6 animate-in fade-in duration-200 text-sm font-normal text-slate-700">
+    <div className="w-full space-y-6 text-sm font-normal text-slate-700">
 
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-xl border border-slate-200">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/material-issuing')}
-            className="p-2 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors border-none cursor-pointer bg-slate-50"
-          >
-            <ArrowLeft size={18} />
-          </button>
+      {/* Professional A4 Print Styles */}
+      <style>{`
+        @media print {
+          body > *:not(#root) {
+            display: none !important;
+          }
+          #root > *:not(div) {
+            display: none !important;
+          }
+          body * {
+            visibility: hidden;
+          }
+          .printable-sheet, .printable-sheet * {
+            visibility: visible;
+          }
+          .printable-sheet {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100vw !important;
+            height: 100vh !important;
+            margin: 0 !important;
+            padding: 10mm !important;
+            background: white !important;
+            z-index: 99999;
+          }
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+          .no-print {
+            display: none !important;
+          }
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            margin-top: 15px;
+          }
+          th, td {
+            border: 1px solid #94a3b8 !important;
+            padding: 8px 10px !important;
+            font-size: 10pt !important;
+          }
+          th {
+            background-color: #f1f5f9 !important;
+            color: black !important;
+            text-transform: uppercase;
+          }
+          .print-signatures {
+            display: flex !important;
+            justify-content: space-between;
+            margin-top: 90px;
+            page-break-inside: avoid;
+          }
+        }
+        .print-signatures {
+          display: none;
+        }
+      `}</style>
+
+      {/* Printable Sheet */}
+      <div className="printable-sheet space-y-6 bg-white p-6 rounded-xl border border-slate-200">
+
+        {/* HEADER */}
+        <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900 tracking-tight">
-              Goods Issue — {issueData.issueNo || `ISS-${issueData._id?.slice(-6).toUpperCase()}`}
-            </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Enter actual issue quantities. Validated against Allocated and Available Stock.
-            </p>
+            <h2 className="text-2xl font-black text-slate-900 tracking-wider">ELISHA</h2>
+            <p className="text-xs text-slate-500 font-semibold mt-1">GOOD ISSUE NOTE</p>
+          </div>
+          <div className="text-right text-xs space-y-1 font-medium">
+            <div>ISSUE NO : <span className="font-bold text-slate-900">{issueData.issueNo || `ISS-${issueData._id?.slice(-6).toUpperCase()}`}</span></div>
+            <div>DATE : <span className="font-bold">{new Date(issueData.createdAt).toISOString().split('T')[0]}</span></div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border ${
-            isIssued
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-              : isPendingApproval
-              ? 'bg-amber-50 border-amber-200 text-amber-700'
-              : 'bg-slate-50 border-slate-200 text-slate-600'
-          }`}>
-            {isIssued
-              ? <><CheckCircle size={12} /> ISSUED</>
-              : isPendingApproval
-              ? <><AlertCircle size={12} /> PENDING APPROVAL</>
-              : <><Package size={12} /> DRAFT</>
-            }
-          </span>
-          <div className="text-xs text-slate-500 font-medium bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
-            {new Date(issueData.createdAt).toISOString().split('T')[0]}
+        {/* INFO SECTION (Plant / Factory එක මෙහි එකතු කර ඇත) */}
+        <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
+          <div>SALES ORDER REF : <span className="font-bold text-slate-900">{issueData.salesOrder?.orderRef || 'N/A'}</span></div>
+          <div>PRODUCTION ORDER : <span className="font-bold text-slate-900">{issueData.productionOrder?.productionOrderNo || 'N/A'}</span></div>
+          <div>WAREHOUSE : <span className="font-bold text-slate-900">{warehouseName}</span></div>
+          <div>PLANT / FACTORY : <span className="font-bold text-slate-900">{plantName}</span></div>
+          <div className="col-span-2">WORKFLOW : <span className="font-bold text-slate-900">{issueData.workflow?.code || issueData.workflow?.name || 'N/A'}</span></div>
+          <div className="col-span-2 pt-2 border-t border-slate-200 flex justify-between items-center">
+            <span className="font-bold text-slate-700 uppercase">Styling CM Charges / Cost:</span>
+            <span className="font-black text-emerald-900 text-sm">LKR {cmCost.toLocaleString()}</span>
           </div>
-        </div>
-      </div>
-
-      {/* INFO CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Sales Order</span>
-          <div className="text-sm font-bold text-emerald-900 mt-1">
-            {issueData.salesOrder?.orderRef || 'N/A'}
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Production Order</span>
-          <div className="text-sm font-bold text-slate-800 mt-1">
-            {issueData.productionOrder?.productionOrderNo || 'N/A'}
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Approval Workflow</span>
-          <div className={`text-sm font-bold mt-1 ${issueData.workflow ? 'text-slate-800' : 'text-rose-600'}`}>
-            {issueData.workflow?.code || issueData.workflow?.name || '⚠️ Not Assigned'}
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Items</span>
-          <div className="text-sm font-bold text-slate-800 mt-1">
-            {editableItems.length} Items
-          </div>
-        </div>
-      </div>
-
-      {/* WAREHOUSE SELECTOR */}
-      {isDraft && (
-        <div className="bg-white p-5 rounded-xl border border-slate-200">
-          <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">
-            Target Warehouse *
-          </label>
-          <div className="flex gap-3 items-center max-w-lg">
-            <select
-              value={selectedWarehouse}
-              onChange={(e) => setSelectedWarehouse(e.target.value)}
-              className="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-normal focus:outline-none focus:border-slate-400 text-slate-800 cursor-pointer"
-            >
-              <option value="">-- Select Target Warehouse --</option>
-              {warehouses.map(wh => (
-                <option key={wh._id} value={wh._id}>
-                  {wh.warehouseCode ? `${wh.warehouseCode} - ` : ''}{wh.warehouseName || wh.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={handleSaveDraft}
-              disabled={submitting || !selectedWarehouse}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold cursor-pointer border-none transition-all disabled:opacity-50 flex items-center gap-1.5"
-            >
-              {submitting ? <Loader2 className="animate-spin" size={14} /> : <><Save size={14} /> Save</>}
-            </button>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1.5">
-            Stock will be checked and deducted from this warehouse on approval.
-          </p>
-        </div>
-      )}
-
-      {(isPendingApproval || isIssued) && (
-        <div className="bg-white p-5 rounded-xl border border-slate-200">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Source Warehouse</span>
-          <div className="text-sm font-bold text-emerald-900 mt-1">
-            {issueData.warehouse?.warehouseName ||
-             warehouses.find(w => w._id === (issueData.warehouse?._id || issueData.warehouse))?.warehouseName ||
-             'Main Store'}
-          </div>
-        </div>
-      )}
-
-      {/* ✅ ITEMS TABLE — with editable Issue Qty */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden w-full">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Package size={16} className="text-slate-500" />
-            <span className="text-sm font-semibold text-slate-800">BOM Items to Issue</span>
-          </div>
-          {isDraft && (
-            <span className="text-[11px] text-slate-500 italic">
-              💡 Issue Qty must be ≤ Allocated and ≤ Available Stock
-            </span>
-          )}
         </div>
 
-        <div className="overflow-x-auto w-full">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-normal tracking-wider text-xs uppercase">
-                <th className="p-3 px-4 w-10">#</th>
-                <th className="p-3 px-4">Material Code</th>
-                <th className="p-3 px-4">Material Name</th>
-                <th className="p-3 px-4">Color</th>
-                <th className="p-3 px-4 text-center">UOM</th>
-                <th className="p-3 px-4 text-right bg-slate-100">Allocated Qty</th>
-                <th className="p-3 px-4 text-right text-emerald-800">Available Stock</th>
-                <th className="p-3 px-4 text-right bg-amber-50 text-amber-800">Issue Qty *</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700">
-              {editableItems.length > 0 ? (
-                editableItems.map((item, idx) => {
-                  const availableStock = getAvailableStock(item.materialId, item.colorId);
-                  const isLowStock = availableStock < item.allocatedQty;
+        {/* WAREHOUSE SELECTOR */}
+        {isDraft && (
+          <div className="bg-white p-5 rounded-xl border border-slate-200 no-print">
+            <label className="block text-xs font-semibold text-slate-600 uppercase mb-2">Target Warehouse *</label>
+            <div className="flex gap-3 items-center max-w-lg">
+              <select
+                value={selectedWarehouse}
+                onChange={(e) => setSelectedWarehouse(e.target.value)}
+                className="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-normal focus:outline-none text-slate-800 cursor-pointer"
+              >
+                <option value="">-- Select Target Warehouse --</option>
+                {warehouses.map(wh => (
+                  <option key={wh._id} value={wh._id}>
+                    {wh.warehouseCode ? `${wh.warehouseCode} - ` : ''}{wh.warehouseName || wh.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleSaveDraft}
+                disabled={submitting || !selectedWarehouse}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold cursor-pointer border-none transition-all disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {submitting ? <Loader2 className="animate-spin" size={14} /> : <><Save size={14} /> Save</>}
+              </button>
+            </div>
+          </div>
+        )}
 
-                  return (
-                    <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="p-3 px-4 text-slate-400 text-xs font-mono">{idx + 1}</td>
-                      <td className="p-3 px-4 text-slate-500 font-mono text-xs font-bold">
-                        {item.itemCode}
-                      </td>
-                      <td className="p-3 px-4 font-medium text-slate-900">
-                        {item.materialName}
-                      </td>
-                      <td className="p-3 px-4 text-slate-600">
-                        {item.colorName}
-                      </td>
-                      <td className="p-3 px-4 text-center">
-                        <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-xs font-semibold text-slate-600">
+        {/* ITEMS TABLE */}
+        <div className="rounded-xl overflow-hidden w-full">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full border-collapse text-left text-sm border border-slate-200">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-300 text-slate-700 font-bold tracking-wider text-xs uppercase">
+                  <th className="p-3 px-4 w-10 border border-slate-300 text-center">#</th>
+                  <th className="p-3 px-4 border border-slate-300">Material Code</th>
+                  <th className="p-3 px-4 border border-slate-300">Material Name</th>
+                  <th className="p-3 px-4 text-center border border-slate-300">UOM</th>
+                  <th className="p-3 px-4 text-right border border-slate-300 no-print">Available Stock</th>
+                  <th className="p-3 px-4 text-right border border-slate-300">Issue Qty</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 text-slate-800">
+                {editableItems.length > 0 ? (
+                  editableItems.map((item, idx) => {
+                    const availableStock = getAvailableStock(item.materialId, item.colorId);
+
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="p-3 px-4 text-center font-mono text-xs border border-slate-200">{idx + 1}</td>
+                        <td className="p-3 px-4 font-mono text-xs font-bold border border-slate-200">{item.itemCode}</td>
+                        <td className="p-3 px-4 font-medium border border-slate-200">{item.materialName}</td>
+                        <td className="p-3 px-4 text-center border border-slate-200 font-medium text-slate-600">
                           {item.uom}
-                        </span>
-                      </td>
+                        </td>
+                        <td className="p-3 px-4 text-right font-mono font-bold text-emerald-800 border border-slate-200 no-print">
+                          {availableStock.toLocaleString()}
+                        </td>
+                        <td className="p-3 px-4 text-right font-mono font-bold border border-slate-200 bg-amber-50/20">
+                          {isDraft ? (
+                            <input
+                              type="number"
+                              min="0"
+                              max={item.allocatedQty}
+                              value={item.issueQty}
+                              onChange={(e) => handleIssueQtyChange(idx, e.target.value)}
+                              className="w-24 px-2 py-1 bg-white border border-amber-300 rounded text-right text-sm font-bold focus:outline-none no-print"
+                            />
+                          ) : (
+                            <span>{Number(item.issueQty || 0).toLocaleString()}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="6" className="p-16 text-center text-slate-400 italic border border-slate-200">No items found.</td>
+                  </tr>
+                )}
+              </tbody>
 
-                      {/* Allocated Qty — read only */}
-                      <td className="p-3 px-4 text-right font-mono font-bold text-slate-800 bg-slate-50">
-                        {item.allocatedQty.toLocaleString()}
-                      </td>
-
-                      {/* Available Stock */}
-                      <td className={`p-3 px-4 text-right font-mono font-bold ${isLowStock ? 'text-rose-600' : 'text-emerald-800'}`}>
-                        {availableStock.toLocaleString()}
-                        {isLowStock && (
-                          <div className="text-[9px] uppercase font-bold text-rose-500 mt-0.5">
-                            ⚠️ Short {(item.allocatedQty - availableStock).toLocaleString()}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* ✅ Issue Qty — EDITABLE INPUT in Draft */}
-                      <td className="p-3 px-4 text-right bg-amber-50/40">
-                        {isDraft ? (
-                          <input
-                            type="number"
-                            min="0"
-                            max={Math.min(item.allocatedQty, availableStock)}
-                            value={item.issueQty}
-                            onChange={(e) => handleIssueQtyChange(idx, e.target.value)}
-                            className="w-28 px-2 py-1.5 bg-white border border-amber-300 rounded-lg text-right text-sm font-bold text-amber-900 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
-                          />
-                        ) : (
-                          <span className="font-mono font-bold text-emerald-900">
-                            {Number(item.issueQty || 0).toLocaleString()}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan="8" className="p-16 text-center text-slate-400 italic">
-                    No items found in this issue sheet.
-                  </td>
-                </tr>
+              {editableItems.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold text-slate-900">
+                    <td colSpan="4" className="p-3 px-4 text-right text-xs uppercase border border-slate-300">TOTAL</td>
+                    <td className="p-3 px-4 border border-slate-300 no-print"></td>
+                    <td className="p-3 px-4 text-right font-mono border border-slate-300">{totalIssue.toLocaleString()}</td>
+                  </tr>
+                </tfoot>
               )}
-            </tbody>
-
-            {/* Totals */}
-            {editableItems.length > 0 && (
-              <tfoot>
-                <tr className="bg-slate-50 border-t-2 border-slate-200">
-                  <td colSpan="5" className="p-3 px-4 text-right text-xs font-bold text-slate-500 uppercase">
-                    TOTAL
-                  </td>
-                  <td className="p-3 px-4 text-right font-mono font-black text-slate-800 bg-slate-100">
-                    {totalAllocated.toLocaleString()}
-                  </td>
-                  <td className="p-3 px-4"></td>
-                  <td className="p-3 px-4 text-right font-mono font-black text-emerald-900 bg-amber-50">
-                    {totalIssue.toLocaleString()}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
+            </table>
+          </div>
         </div>
+
+        {/* PRINT SIGNATURE BLOCK */}
+        <div className="print-signatures pt-8">
+          <div className="text-center w-1/3">
+            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-48">Prepared By</p>
+          </div>
+          <div className="text-center w-1/3">
+            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-48">Checked By</p>
+          </div>
+          <div className="text-center w-1/3">
+            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-48">Authorized Signature</p>
+          </div>
+        </div>
+
       </div>
-
-      {/* Warning if no workflow */}
-      {isDraft && !issueData.workflow && (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium flex items-center gap-2">
-          <AlertCircle size={16} />
-          <span>⚠️ This issue has no workflow assigned. Cannot submit for approval.</span>
-        </div>
-      )}
 
       {/* ACTION BUTTONS */}
-      <div className="flex justify-between items-center pt-2 pb-6">
+      <div className="flex justify-between items-center pt-2 pb-6 no-print">
         <button
           type="button"
           onClick={() => navigate('/material-issuing')}
@@ -488,30 +449,32 @@ const GoodsIssueWindow = () => {
               type="button"
               onClick={handleSubmitForApproval}
               disabled={approvaling || !issueData.workflow || !selectedWarehouse}
-              className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold cursor-pointer border-none shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold cursor-pointer border-none shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-40"
             >
-              {approvaling
-                ? <Loader2 className="animate-spin" size={14} />
-                : <><Send size={14} /> Submit for Approval</>
-              }
+              {approvaling ? <Loader2 className="animate-spin" size={14} /> : <><Send size={14} /> Submit for Approval</>}
             </button>
           )}
 
           {isPendingApproval && (
             <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
               <AlertCircle size={14} className="text-amber-600" />
-              <span className="text-xs text-amber-700 font-semibold">
-                Awaiting approval. Issue is locked.
-              </span>
+              <span className="text-xs text-amber-700 font-semibold">Awaiting approval. Issue is locked.</span>
             </div>
           )}
 
           {isIssued && (
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
-              <CheckCircle size={14} className="text-emerald-600" />
-              <span className="text-xs text-emerald-700 font-semibold">
-                Issue completed. Stock has been deducted from warehouse.
-              </span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <CheckCircle size={14} className="text-emerald-600" />
+                <span className="text-xs text-emerald-700 font-semibold">Issue completed.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5 shadow-sm"
+              >
+                <Printer size={14} /> Print Goods Issue
+              </button>
             </div>
           )}
         </div>

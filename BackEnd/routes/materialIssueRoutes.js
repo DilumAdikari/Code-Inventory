@@ -58,6 +58,7 @@ router.get('/', async (req, res) => {
       .populate({ path: 'salesOrder', select: 'orderRef buyerName' })
       .populate({ path: 'productionOrder', select: 'productionOrderNo' })
       .populate({ path: 'warehouse', select: 'warehouseName warehouseCode' })
+      .populate({ path: 'plant', select: 'name factoryCode location' }) // 🌟 Factory Schema එකට අනුකූලව 'name' යොදා ඇත
       .populate({ path: 'workflow', select: 'code' })
       .populate({ path: 'items.material', select: 'materialName itemCode' })
       .populate({ path: 'items.color', select: 'name colorName code' })
@@ -83,7 +84,7 @@ router.get('/production-order-bom/:id', async (req, res) => {
 
 // ✅ 3. CREATE MANUAL ISSUE — specific path BEFORE /:id (Safe against duplicate issueNo)
 router.post('/manual-issue', async (req, res) => {
-  const { salesOrderId, productionOrderId, workflowId, items, createdBy } = req.body;
+  const { salesOrderId, productionOrderId, workflowId, plantId, items, createdBy } = req.body;
 
   try {
     let finalSalesOrderId = salesOrderId;
@@ -101,7 +102,6 @@ router.post('/manual-issue', async (req, res) => {
     let savedIssue = null;
     let attempts = 0;
 
-    // 🌟 ඩුප්ලිකේට් අංක ගැටළුව මඟහරවා ගැනීමට සහ ආරක්ෂිතව සේව් කිරීමට Retry Loop එකක් යොදා ඇත
     while (!savedIssue && attempts < 5) {
       try {
         const lastIssue = await MaterialIssue.findOne().sort({ _id: -1 });
@@ -128,6 +128,7 @@ router.post('/manual-issue', async (req, res) => {
           salesOrder: finalSalesOrderId,
           productionOrder: productionOrderId,
           warehouse: warehouseId,
+          plant: plantId || null,
           workflow: workflowId || null,
           issueType: 'Manual',
           status: 'PENDING_ISSUE',
@@ -137,7 +138,6 @@ router.post('/manual-issue', async (req, res) => {
 
         savedIssue = await newMaterialIssue.save();
       } catch (saveErr) {
-        // MongoDB Duplicate Key Error Code = 11000
         if (saveErr.code === 11000) {
           attempts++;
           console.warn(`⚠️ Duplicate issueNo encountered, retrying (attempt ${attempts})...`);
@@ -225,13 +225,13 @@ router.put('/finalize/:id', async (req, res) => {
     issue.status = 'ISSUED';
     await issue.save();
 
-    // ✅ deduct stock
     await deductStockForIssue(issue);
 
     const updatedIssue = await MaterialIssue.findById(issue._id)
       .populate({ path: 'salesOrder', select: 'orderRef buyerName' })
       .populate({ path: 'productionOrder', select: 'productionOrderNo' })
       .populate({ path: 'warehouse', select: 'warehouseName' })
+      .populate({ path: 'plant', select: 'name factoryCode location' }) // 🌟 Factory Schema එකට අනුකූලව 'name' යොදා ඇත
       .populate({ path: 'items.material', select: 'materialName itemCode' })
       .populate({ path: 'items.color', select: 'name colorName code' });
 

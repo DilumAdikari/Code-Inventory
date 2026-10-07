@@ -1,12 +1,19 @@
 const mongoose = require('mongoose');
 
 const MaterialIssueSchema = new mongoose.Schema({
-  issueNo: { type: String, required: false, unique: true,sparse: true },
+  issueNo: { type: String, required: false, unique: true, sparse: true },
   salesOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesOrder', required: true },
   productionOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'ProductionOrder', required: false },
   warehouse: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse', required: true },
+  
+  // 🌟 NEW — Plant (Supplier Master) field eka ekathu kala
+  plant: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Supplier',
+    default: null
+  },
 
-  // ✅ NEW — workflow for approval routing
+  // ✅ workflow for approval routing
   workflow: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Workflow',
@@ -15,7 +22,6 @@ const MaterialIssueSchema = new mongoose.Schema({
 
   issueType: { type: String, enum: ['Auto', 'Manual'], default: 'Auto' },
 
-  // ✅ added 'Pending Approval' to enum
   status: {
     type: String,
     enum: ['PENDING_ISSUE', 'Pending Approval', 'ISSUED', 'DRAFT'],

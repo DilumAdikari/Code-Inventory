@@ -12,11 +12,13 @@ const MaterialIssuing = () => {
 
   const [productionOrders, setProductionOrders] = useState([]);
   const [workflows, setWorkflows] = useState([]);
+  const [factories, setFactories] = useState([]); // 🌟 Factory Master ඩේටා සඳහා State එක
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [manualIssueForm, setManualIssueForm] = useState({
     salesOrderId: '',
     productionOrderId: '',
     workflowId: '',
+    plantId: '', // 🌟 Factory / Plant ID එක
     issueDate: new Date().toISOString().split('T')[0],
     items: []
   });
@@ -28,14 +30,16 @@ const MaterialIssuing = () => {
 
   const fetchIssues = async () => {
     try {
-      const [response, poRes, wfRes] = await Promise.all([
+      const [response, poRes, wfRes, factoryRes] = await Promise.all([
         axios.get('http://192.168.1.30:5003/api/material-issues'),
         axios.get('http://192.168.1.30:5003/api/production-orders'),
-        axios.get('http://192.168.1.30:5003/api/workflows')
+        axios.get('http://192.168.1.30:5003/api/workflows'),
+        axios.get('http://192.168.1.30:5003/api/factories').catch(() => ({ data: [] })) // 🌟 Factory Master API එකෙන් ලබා ගැනීම
       ]);
       setIssuesList(response.data);
       setProductionOrders(poRes.data);
       setWorkflows(wfRes.data || []);
+      setFactories(factoryRes.data || []);
       setLoading(false);
     } catch (err) {
       console.error("❌ Failed to fetch:", err);
@@ -67,6 +71,10 @@ const MaterialIssuing = () => {
       alert("Please select an Approval Workflow.");
       return;
     }
+    if (!manualIssueForm.plantId) {
+      alert("Please select a Plant / Factory.");
+      return;
+    }
     if (poBOMItems.length === 0) {
       alert("No BOM items found for this Production Order.");
       return;
@@ -78,13 +86,14 @@ const MaterialIssuing = () => {
         salesOrderId: manualIssueForm.salesOrderId,
         productionOrderId: manualIssueForm.productionOrderId,
         workflowId: manualIssueForm.workflowId,
+        plantId: manualIssueForm.plantId, // 🌟 Factory / Plant ID එක යැවීම
         items: poBOMItems,
         createdBy: currentUsername
       };
       await axios.post('http://192.168.1.30:5003/api/material-issues/manual-issue', payload);
       setIsManualModalOpen(false);
       setManualIssueForm({
-        salesOrderId: '', productionOrderId: '', workflowId: '',
+        salesOrderId: '', productionOrderId: '', workflowId: '', plantId: '',
         issueDate: new Date().toISOString().split('T')[0], items: []
       });
       setPoBOMItems([]);
@@ -177,6 +186,7 @@ const MaterialIssuing = () => {
                 <th className="p-4 px-6">Issue ID</th>
                 <th className="p-4 px-6">Sales Order Ref</th>
                 <th className="p-4 px-6">Production Order</th>
+                <th className="p-4 px-6">Plant / Factory</th>
                 <th className="p-4 px-6 text-center">Items</th>
                 <th className="p-4 px-6">Warehouse</th>
                 <th className="p-4 px-6">Workflow</th>
@@ -187,6 +197,10 @@ const MaterialIssuing = () => {
               {filteredIssues.length > 0 ? filteredIssues.map((issue) => {
                 const statusInfo = getStatusDisplay(issue.status);
                 const issueIdLabel = issue.issueNo || `ISS-${issue._id?.slice(-6).toUpperCase()}`;
+                
+                // 🌟 Factory Schema එකේ ඇති 'name' ෆීල්ඩ් එක මඟින් නම ලබා ගැනීම
+                const plantLabel = issue.plant?.name || issue.plant?.factoryCode || 'N/A';
+                
                 return (
                   <tr
                     key={issue._id}
@@ -202,6 +216,7 @@ const MaterialIssuing = () => {
                     <td className="p-4 px-6 text-sm text-slate-800 font-semibold">
                       {issue.productionOrder?.productionOrderNo || 'PO-GEN'}
                     </td>
+                    <td className="p-4 px-6 text-sm text-slate-700 font-semibold">{plantLabel}</td>
                     <td className="p-4 px-6 text-sm text-center font-bold text-slate-800">
                       <span className="px-2.5 py-1 bg-slate-100 rounded-lg text-xs font-mono">
                         {issue.items?.length || 0} Items
@@ -218,7 +233,7 @@ const MaterialIssuing = () => {
                 );
               }) : (
                 <tr>
-                  <td colSpan="7" className="py-16 text-center text-slate-400 italic">No material issuing records found.</td>
+                  <td colSpan="8" className="py-16 text-center text-slate-400 italic">No material issuing records found.</td>
                 </tr>
               )}
             </tbody>
@@ -226,7 +241,7 @@ const MaterialIssuing = () => {
         </div>
       </div>
 
-      {/* ✅ CREATE MODAL — with workflow selector */}
+      {/* ✅ CREATE MODAL — with workflow & factory plant selector */}
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl animate-in zoom-in-95 duration-200">
@@ -252,7 +267,7 @@ const MaterialIssuing = () => {
                   <label className="block text-xs font-bold text-slate-500 mb-1">Production Order *</label>
                   <select
                     onChange={(e) => handleProductionOrderChange(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all cursor-pointer"
                   >
                     <option value="">-- Choose Production Order --</option>
                     {productionOrders
@@ -266,13 +281,30 @@ const MaterialIssuing = () => {
                 </div>
               </div>
 
+              {/* 🌟 Plant / Factory Master Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Plant / Factory *</label>
+                <select
+                  value={manualIssueForm.plantId}
+                  onChange={(e) => setManualIssueForm({ ...manualIssueForm, plantId: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all font-semibold text-slate-800 cursor-pointer"
+                >
+                  <option value="">-- Select Plant / Factory --</option>
+                  {factories.map(f => (
+                    <option key={f._id} value={f._id}>
+                      {f.name || f.factoryCode}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* ✅ Workflow selector */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">Approval Workflow *</label>
                 <select
                   value={manualIssueForm.workflowId}
                   onChange={(e) => setManualIssueForm({ ...manualIssueForm, workflowId: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all font-semibold text-slate-800"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all font-semibold text-slate-800 cursor-pointer"
                 >
                   <option value="">-- Select Approval Workflow --</option>
                   {workflows.map(w => (
@@ -329,7 +361,7 @@ const MaterialIssuing = () => {
                 <button
                   type="button"
                   onClick={handleSaveManualIssue}
-                  disabled={saving || !manualIssueForm.productionOrderId || !manualIssueForm.workflowId || poBOMItems.length === 0}
+                  disabled={saving || !manualIssueForm.productionOrderId || !manualIssueForm.workflowId || !manualIssueForm.plantId || poBOMItems.length === 0}
                   className="px-4 py-2.5 bg-emerald-900 text-white font-semibold rounded-xl text-sm hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer border-none"
                 >
                   {saving ? <Loader2 className="animate-spin mx-auto" size={16} /> : 'Save as Draft'}
