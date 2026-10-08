@@ -6,7 +6,6 @@ const Stock = require('../models/Stock');
 const Approval = require('../models/Approval');
 const Workflow = require('../models/Workflow');
 
-// ✅ HELPER — extract first approver from workflow
 const getApproverFromWorkflow = async (workflowId) => {
   if (!workflowId) return null;
   const wfDoc = await Workflow.findById(workflowId)
@@ -29,7 +28,6 @@ const getApproverFromWorkflow = async (workflowId) => {
   return null;
 };
 
-// ✅ HELPER — deduct stock for all items in an issue
 const deductStockForIssue = async (issue) => {
   if (!issue.items || issue.items.length === 0) return;
   for (let item of issue.items) {
@@ -45,32 +43,30 @@ const deductStockForIssue = async (issue) => {
           { $inc: { qty: -issuedQty } },
           { new: true }
         );
-        console.log(`✅ Stock deducted: material ${item.material} qty -${issuedQty}`);
       }
     }
   }
 };
 
-// ✅ 1. GET ALL — specific routes BEFORE /:id
+// GET ALL
 router.get('/', async (req, res) => {
   try {
     const issues = await MaterialIssue.find()
       .populate({ path: 'salesOrder', select: 'orderRef buyerName' })
       .populate({ path: 'productionOrder', select: 'productionOrderNo' })
       .populate({ path: 'warehouse', select: 'warehouseName warehouseCode' })
-      .populate({ path: 'plant', select: 'name factoryCode location' }) // 🌟 Factory Schema එකට අනුකූලව 'name' යොදා ඇත
+      .populate({ path: 'plant', model: 'Factory', select: 'name factoryCode location' }) // 🌟 model: 'Factory' එකතු කර ඇත[cite: 7]
       .populate({ path: 'workflow', select: 'code' })
       .populate({ path: 'items.material', select: 'materialName itemCode' })
       .populate({ path: 'items.color', select: 'name colorName code' })
       .sort({ createdAt: -1 });
     res.json(issues);
   } catch (err) {
-    console.error("❌ MaterialIssue Fetch Error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ 2. GET BOM FOR PRODUCTION ORDER — specific path BEFORE /:id
+// GET BOM FOR PRODUCTION ORDER
 router.get('/production-order-bom/:id', async (req, res) => {
   try {
     const po = await mongoose.model('ProductionOrder').findById(req.params.id)
@@ -82,7 +78,7 @@ router.get('/production-order-bom/:id', async (req, res) => {
   }
 });
 
-// ✅ 3. CREATE MANUAL ISSUE — specific path BEFORE /:id (Safe against duplicate issueNo)
+// CREATE MANUAL ISSUE
 router.post('/manual-issue', async (req, res) => {
   const { salesOrderId, productionOrderId, workflowId, plantId, items, createdBy } = req.body;
 
@@ -140,7 +136,6 @@ router.post('/manual-issue', async (req, res) => {
       } catch (saveErr) {
         if (saveErr.code === 11000) {
           attempts++;
-          console.warn(`⚠️ Duplicate issueNo encountered, retrying (attempt ${attempts})...`);
         } else {
           throw saveErr;
         }
@@ -148,18 +143,16 @@ router.post('/manual-issue', async (req, res) => {
     }
 
     if (!savedIssue) {
-      return res.status(500).json({ message: "Failed to generate a unique Issue No after multiple attempts." });
+      return res.status(500).json({ message: "Failed to generate unique Issue No." });
     }
 
-    console.log(`✅ [MANUAL ISSUE CREATED] ${savedIssue.issueNo} with ${savedIssue.items.length} items`);
     res.status(201).json(savedIssue);
   } catch (err) {
-    console.error("❌ Error creating manual issue:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ 4. SUBMIT FOR APPROVAL — specific path BEFORE /:id
+// SUBMIT FOR APPROVAL
 router.post('/submit-approval/:id', async (req, res) => {
   const { createdBy } = req.body;
   try {
@@ -169,18 +162,9 @@ router.post('/submit-approval/:id', async (req, res) => {
 
     if (!issue) return res.status(404).json({ message: "Material Issue not found." });
 
-    if (issue.status !== 'PENDING_ISSUE' && issue.status !== 'DRAFT') {
-      return res.status(400).json({ message: "Only Draft/Pending issues can be submitted for approval." });
-    }
-
-    if (!issue.workflow) {
-      return res.status(400).json({ message: "No workflow assigned. Please select a workflow when creating the issue." });
-    }
-
     const targetApprover = await getApproverFromWorkflow(issue.workflow._id || issue.workflow);
-
     if (!targetApprover) {
-      return res.status(400).json({ message: "No valid approver found in workflow. Please check workflow configuration." });
+      return res.status(400).json({ message: "No valid approver found in workflow." });
     }
 
     issue.status = 'Pending Approval';
@@ -195,21 +179,18 @@ router.post('/submit-approval/:id', async (req, res) => {
       requestedBy: createdBy || issue.createdBy || 'SYSTEM',
       approver: targetApprover,
       date: new Date().toISOString().split('T')[0],
-      summary: `Material Issue ${issue.issueNo} for Sales Order ${issue.salesOrder?.orderRef || 'N/A'} submitted for approval.`,
+      summary: `Material Issue ${issue.issueNo} submitted for approval.`,
       status: 'PENDING'
     });
 
     await newApproval.save();
-    console.log(`✅ [MATERIAL ISSUE APPROVAL] ${issue.issueNo} → assigned to: ${targetApprover}`);
-
-    res.json({ message: "Material Issue submitted for approval.", issue, approver: targetApprover });
+    res.json({ message: "Submitted for approval.", issue, approver: targetApprover });
   } catch (err) {
-    console.error("❌ Submit approval error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ 5. FINALIZE — specific path BEFORE generic /:id
+// FINALIZE
 router.put('/finalize/:id', async (req, res) => {
   const { warehouse } = req.body;
   try {
@@ -231,30 +212,45 @@ router.put('/finalize/:id', async (req, res) => {
       .populate({ path: 'salesOrder', select: 'orderRef buyerName' })
       .populate({ path: 'productionOrder', select: 'productionOrderNo' })
       .populate({ path: 'warehouse', select: 'warehouseName' })
-      .populate({ path: 'plant', select: 'name factoryCode location' }) // 🌟 Factory Schema එකට අනුකූලව 'name' යොදා ඇත
+      .populate({ path: 'plant', model: 'Factory', select: 'name factoryCode location' }) // 🌟 model: 'Factory' එකතු කර ඇත[cite: 7]
       .populate({ path: 'items.material', select: 'materialName itemCode' })
       .populate({ path: 'items.color', select: 'name colorName code' });
 
-    console.log(`✅ [FINALIZED] ${issue._id} → ISSUED, stock deducted`);
     res.json(updatedIssue);
   } catch (err) {
-    console.error("❌ Finalize Error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ 6. UPDATE ITEMS + WAREHOUSE — for editing draft
+// UPDATE PLANT / FACTORY on existing issue
+router.put('/update-plant/:id', async (req, res) => {
+  const { plantId } = req.body;
+  try {
+    if (!plantId) return res.status(400).json({ message: 'plantId is required' });
+
+    const updated = await MaterialIssue.findByIdAndUpdate(
+      req.params.id,
+      { plant: mongoose.Types.ObjectId.isValid(plantId) ? new mongoose.Types.ObjectId(plantId) : plantId },
+      { new: true }
+    ).populate({ path: 'plant', model: 'Factory', select: 'name factoryCode location' }); //[cite: 7]
+
+    if (!updated) return res.status(404).json({ message: 'Issue not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// UPDATE ITEMS
 router.put('/update-items/:id', async (req, res) => {
   const { warehouse, items } = req.body;
   try {
     const updateData = {};
-
     if (warehouse) {
       updateData.warehouse = mongoose.Types.ObjectId.isValid(warehouse)
         ? new mongoose.Types.ObjectId(warehouse)
         : warehouse;
     }
-
     if (items && items.length > 0) {
       updateData.items = items.map(item => ({
         material: mongoose.Types.ObjectId.isValid(item.material) ? new mongoose.Types.ObjectId(item.material) : item.material,
@@ -266,18 +262,10 @@ router.put('/update-items/:id', async (req, res) => {
       }));
     }
 
-    const updated = await MaterialIssue.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    );
-
+    const updated = await MaterialIssue.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
     if (!updated) return res.status(404).json({ message: 'Issue not found' });
-
-    console.log(`✅ [ISSUE UPDATED] ${req.params.id} — items and warehouse saved`);
     res.json(updated);
   } catch (err) {
-    console.error("❌ Update items error:", err);
     res.status(500).json({ message: err.message });
   }
 });
