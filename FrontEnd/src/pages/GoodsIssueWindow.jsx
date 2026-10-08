@@ -229,12 +229,12 @@ const GoodsIssueWindow = () => {
     'Main Store';
 
   // 🌟 Factory Master එකෙන් පැමිණි Plant / Factory නම ලබා ගැනීම
-  const plantName = issueData.plant?.factoryName || issueData.plant?.name || issueData.plant?.factoryCode || 'N/A';
+  const plantName = issueData.plant?.name || issueData.plant?.factoryCode || 'N/A';
 
   return (
     <div className="w-full space-y-6 text-sm font-normal text-slate-700">
 
-      {/* Professional A4 Print Styles */}
+      {/* Professional A4 Print Styles (Border & Headers/Footers removed) */}
       <style>{`
         @media print {
           body > *:not(#root) {
@@ -258,11 +258,14 @@ const GoodsIssueWindow = () => {
             margin: 0 !important;
             padding: 10mm !important;
             background: white !important;
+            border: none !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
             z-index: 99999;
           }
           @page {
             size: A4 portrait;
-            margin: 10mm;
+            margin: 0mm;
           }
           .no-print {
             display: none !important;
@@ -300,7 +303,7 @@ const GoodsIssueWindow = () => {
         {/* HEADER */}
         <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
           <div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-wider">ELISHA</h2>
+            <h1 className="text-2xl font-black text-slate-900 tracking-wider">Elisha Clothing (Pvt) Ltd</h1>
             <p className="text-xs text-slate-500 font-semibold mt-1">GOOD ISSUE NOTE</p>
           </div>
           <div className="text-right text-xs space-y-1 font-medium">
@@ -309,7 +312,7 @@ const GoodsIssueWindow = () => {
           </div>
         </div>
 
-        {/* INFO SECTION (Plant / Factory එක මෙහි එකතු කර ඇත) */}
+        {/* INFO SECTION */}
         <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
           <div>SALES ORDER REF : <span className="font-bold text-slate-900">{issueData.salesOrder?.orderRef || 'N/A'}</span></div>
           <div>PRODUCTION ORDER : <span className="font-bold text-slate-900">{issueData.productionOrder?.productionOrderNo || 'N/A'}</span></div>
@@ -421,13 +424,16 @@ const GoodsIssueWindow = () => {
         {/* PRINT SIGNATURE BLOCK */}
         <div className="print-signatures pt-8">
           <div className="text-center w-1/3">
-            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-48">Prepared By</p>
+            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-30">Factory Signature</p>
           </div>
           <div className="text-center w-1/3">
-            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-48">Checked By</p>
+            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-30">Prepared By</p>
           </div>
           <div className="text-center w-1/3">
-            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-48">Authorized Signature</p>
+            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-30">Checked By</p>
+          </div>
+          <div className="text-center w-1/3">
+            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-30">Authorized Signature</p>
           </div>
         </div>
 
