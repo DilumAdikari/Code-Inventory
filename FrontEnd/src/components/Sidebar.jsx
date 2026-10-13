@@ -9,7 +9,8 @@ import {
   ShoppingCart,
   Tag,
   FileBarChart, 
-  RotateCcw    // 🌟 GRN Return සඳහා අයිකන් එක
+  RotateCcw,    // 🌟 GRN Return සඳහා අයිකන් එක
+  PackageMinus  // 🌟 Goods Issue Report සඳහා අයිකන් එක
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -29,6 +30,9 @@ const Sidebar = () => {
     if (moduleName === 'stockOverview') return true; 
     return !!storedPermissions[moduleName];
   };
+
+  // 🌟 Reports dropdown එක පෙන්වන්න — අඩුම තරමේ එක report එකකටවත් access තියෙනවා නම්
+  const hasAnyReportAccess = hasAccess('grnHistory') || hasAccess('materialIssuing');
 
   const menuItems = [
     { icon: <LayoutDashboard size={20} />, label: 'Dashboard', path: '/dashboard', permissionKey: 'dashboard' },
@@ -138,8 +142,8 @@ const Sidebar = () => {
             </div>
           )}
 
-          {/* REPORTS DROPDOWN (GRN Report පමණක් සහිතව) */}
-          {hasAccess('grnHistory') && (
+          {/* 🌟 REPORTS DROPDOWN (GRN Report + Goods Issue Report) */}
+          {hasAnyReportAccess && (
             <div className="space-y-1 w-full">
               <button
                 onClick={() => { setIsReportsOpen(!isReportsOpen); closeOtherDropdowns('reports'); }}
@@ -155,7 +159,12 @@ const Sidebar = () => {
               
               {isReportsOpen && (
                 <div className="pl-4 space-y-1 group-hover:block hidden animate-in slide-in-from-top-2 duration-150">
-                  <NavLink to="/reports/grn" className={({ isActive }) => `flex items-center w-full px-3 py-2 rounded-lg text-xs font-semibold transition-all gap-2 text-left ${isActive ? 'bg-emerald-800 text-emerald-300' : 'text-white/80 hover:bg-emerald-800/60'}`}><FileBarChart size={14} /> GRN Report</NavLink>
+                  {hasAccess('grnHistory') && (
+                    <NavLink to="/reports/grn" className={({ isActive }) => `flex items-center w-full px-3 py-2 rounded-lg text-xs font-semibold transition-all gap-2 text-left ${isActive ? 'bg-emerald-800 text-emerald-300' : 'text-white/80 hover:bg-emerald-800/60'}`}><FileBarChart size={14} /> GRN Report</NavLink>
+                  )}
+                  {hasAccess('materialIssuing') && (
+                    <NavLink to="/reports/goods-issue" className={({ isActive }) => `flex items-center w-full px-3 py-2 rounded-lg text-xs font-semibold transition-all gap-2 text-left ${isActive ? 'bg-emerald-800 text-emerald-300' : 'text-white/80 hover:bg-emerald-800/60'}`}><PackageMinus size={14} /> Goods Issue Report</NavLink>
+                  )}
                 </div>
               )}
             </div>

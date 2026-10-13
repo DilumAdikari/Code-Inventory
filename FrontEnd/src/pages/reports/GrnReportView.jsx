@@ -1,209 +1,370 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { FileBarChart, Search, Printer, Loader2 } from 'lucide-react';
+import { FileBarChart, Search, Printer, Loader2, RotateCcw, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
+
+const API = 'http://192.168.1.30:5003/api';
+
+// Populate කරලා object එකක් ආවත්, ID string එකක් ආවත් ID එක ගන්න
+const getId = (v) => (v && typeof v === 'object' ? String(v._id ?? v.id ?? '') : String(v ?? ''));
+const asArray = (res) => {
+  const d = res?.data;
+  if (Array.isArray(d)) return d;
+  return d?.data || d?.sizes || [];
+};
+const num = (v) => Number(v) || 0;
+const fmt = (v) => num(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// grnDate එක "2026-09-15" හෝ ISO date එකක් වුණත් YYYY-MM-DD ගන්න
+const toDay = (d) => (d ? String(d).slice(0, 10) : '');
+
+const statusCls = (s) => {
+  if (s === 'Completed') return 'bg-emerald-50 border-emerald-200 text-emerald-700';
+  if (s === 'Pending Approval') return 'bg-amber-50 border-amber-200 text-amber-700';
+  return 'bg-slate-100 border-slate-200 text-slate-600';
+};
 
 const GrnReportView = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // URL එකෙන් ෆිල්ටර් පරාමිතීන් ලබා ගැනීම
   const warehouseId = searchParams.get('warehouse') || '';
   const grnNo = searchParams.get('grnNo') || '';
   const productId = searchParams.get('product') || '';
   const dateFrom = searchParams.get('dateFrom') || '';
   const dateTo = searchParams.get('dateTo') || '';
+  const status = searchParams.get('status') ?? 'Completed'; // Default: stock එකට වැටුණු GRN විතරයි
 
-  const [warehouses, setWarehouses] = useState([]);
-  const [items, setItems] = useState([]);
   const [grns, setGrns] = useState([]);
-
-  // Form State
-  const [form, setForm] = useState({
-    warehouse: warehouseId,
-    grnNo: grnNo,
-    product: productId,
-    dateFrom: dateFrom,
-    dateTo: dateTo
-  });
-
-  const [filteredStocks, setFilteredStocks] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [itemList, setItemList] = useState([]);
+  const [colors, setColors] = useState([]);
+  const [sizes, setSizes] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 1. Dropdown ලැයිස්තු සඳහා ඩේටා ගෙන්වා ගැනීම
-  useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        const [whRes, itemRes, grnRes] = await Promise.all([
-          axios.get('http://192.168.1.30:5003/api/warehouses').catch(() => ({ data: [] })),
-          axios.get('http://192.168.1.30:5003/api/grn/all-items-search').catch(() => ({ data: [] })),
-          axios.get('http://192.168.1.30:5003/api/grn-history').catch(() => ({ data: [] }))
-        ]);
+  const [form, setForm] = useState({ warehouse: warehouseId, grnNo, product: productId, dateFrom, dateTo, status });
 
-        setWarehouses(whRes.data || []);
-        setItems(Array.isArray(itemRes.data) ? itemRes.data : (itemRes.data?.data || []));
-        setGrns(Array.isArray(grnRes.data) ? grnRes.data : (grnRes.data?.data || []));
-      } catch (err) {
-        console.error("Error loading filters:", err);
-      }
-    };
-    fetchInitialData();
-  }, []);
-
-  // 2. ඩේටා ෆිල්ටර් කර ලබා ගැනීම
   useEffect(() => {
-    const fetchReportData = async () => {
+    setForm({ warehouse: warehouseId, grnNo, product: productId, dateFrom, dateTo, status });
+  }, [warehouseId, grnNo, productId, dateFrom, dateTo, status]);
+
+  // GRN Register එකේ පාවිච්චි කරන endpoints ම
+  useEffect(() => {
+    const load = async () => {
       try {
         setLoading(true);
-        const stockRes = await axios.get('http://192.168.1.30:5003/api/stocks').catch(() => ({ data: [] }));
-        let stocks = Array.isArray(stockRes.data) ? stockRes.data : (stockRes.data?.data || []);
+        const safe = (url) => axios.get(url).catch(() => ({ data: [] }));
+        const [grnRes, whRes, supRes, matRes, fgRes, colRes, sizeRes] = await Promise.all([
+          safe(`${API}/grn`),
+          safe(`${API}/warehouses`),
+          safe(`${API}/suppliers`),
+          safe(`${API}/materials`),
+          safe(`${API}/finished-goods`),
+          safe(`${API}/colors`),
+          safe(`${API}/sizes`),
+        ]);
 
-        if (warehouseId) {
-          stocks = stocks.filter(s => {
-            const sWhId = s.warehouse?._id ? String(s.warehouse._id) : String(s.warehouse || '');
-            return sWhId === String(warehouseId);
-          });
-        }
+        const combined = [
+          ...asArray(matRes).map((m) => ({
+            _id: String(m._id),
+            itemCode: m.materialCode || m.itemCode || 'MAT',
+            itemName: m.materialName || m.itemName || 'Material',
+            itemType: 'RM',
+          })),
+          ...asArray(fgRes).map((f) => ({
+            _id: String(f._id),
+            itemCode: f.itemCode || f.code || 'FG',
+            itemName: f.itemName || f.name || 'Finished Good',
+            itemType: 'FG',
+          })),
+        ];
 
-        if (productId) {
-          stocks = stocks.filter(s => {
-            const sMatId = s.material?._id ? String(s.material._id) : String(s.material || '');
-            return sMatId === String(productId);
-          });
-        }
-
-        setFilteredStocks(stocks);
-        setLoading(false);
+        setGrns(asArray(grnRes));
+        setWarehouses(asArray(whRes));
+        setSuppliers(asArray(supRes));
+        setItemList(combined);
+        setColors(asArray(colRes));
+        setSizes(asArray(sizeRes));
       } catch (err) {
-        console.error("Error fetching report data:", err);
+        console.error('Error loading GRN report:', err);
+      } finally {
         setLoading(false);
       }
     };
+    load();
+  }, []);
 
-    fetchReportData();
-  }, [warehouseId, productId, grnNo, dateFrom, dateTo]);
+  // ID -> object lookup maps (populate නොකළත් නම පෙන්නන්න)
+  const maps = useMemo(() => {
+    const byId = (arr) => new Map(arr.map((x) => [String(x._id), x]));
+    return {
+      wh: byId(warehouses),
+      sup: byId(suppliers),
+      item: byId(itemList),
+      color: byId(colors),
+      size: byId(sizes),
+    };
+  }, [warehouses, suppliers, itemList, colors, sizes]);
 
-  // 'View Report' බටන් එක එබූ විට URL පරාමිතීන් යාවත්කාලීන කිරීම
+  const grnOptions = useMemo(
+    () => [...grns].sort((a, b) => String(b.grnNo || '').localeCompare(String(a.grnNo || ''))),
+    [grns]
+  );
+
+  // GRN items -> report rows
+  const rows = useMemo(() => {
+    const out = [];
+    grns.forEach((g) => {
+      const gStatus = g.status || 'Draft';
+      if (status && gStatus !== status) return;
+      if (grnNo && String(g.grnNo) !== grnNo) return;
+
+      const day = toDay(g.grnDate);
+      if (dateFrom && (!day || day < dateFrom)) return;
+      if (dateTo && (!day || day > dateTo)) return;
+
+      const supId = getId(g.supplier);
+      const sup = (typeof g.supplier === 'object' && g.supplier) || maps.sup.get(supId);
+      const supplierName = sup?.supplierName || sup?.name || sup?.companyName || g.supplierName || '-';
+      const typeName = g.grnType?.typeName || g.grnType?.name || 'General';
+
+      (g.items || []).forEach((l, i) => {
+        // Warehouse එක GRN එකේ items වල storeLocation එකේ තියෙන්නේ
+        const whId = getId(l.storeLocation) || getId(g.globalWarehouse);
+        if (warehouseId && whId !== warehouseId) return;
+
+        const matId = getId(l.material);
+        if (productId && matId !== productId) return;
+
+        const matPop = typeof l.material === 'object' ? l.material : null;
+        const mat = maps.item.get(matId);
+        const colObj = (typeof l.color === 'object' && l.color) || maps.color.get(getId(l.color));
+        const sizeObj = (typeof l.size === 'object' && l.size) || maps.size.get(getId(l.size));
+        const whObj = (typeof l.storeLocation === 'object' && l.storeLocation) || maps.wh.get(whId);
+
+        const qty = num(l.receivedQty);
+        const price = num(l.unitPrice);
+
+        out.push({
+          key: `${g._id}-${l._id || i}`,
+          grnNo: g.grnNo || '-',
+          date: day,
+          type: typeName,
+          status: gStatus,
+          invoiceNo: g.invoiceNo || '-',
+          supplier: supplierName,
+          warehouse: whObj?.warehouseName || '-',
+          itemName: mat?.itemName || matPop?.materialName || matPop?.itemName || 'Item',
+          itemCode: mat?.itemCode || matPop?.materialCode || matPop?.itemCode || '',
+          color: colObj ? colObj.colorName || colObj.name : '-',
+          size: sizeObj ? sizeObj.sizeCode || sizeObj.sizeDescription || sizeObj.name : '-',
+          uom: typeof l.uom === 'object' ? l.uom?.abbreviation || l.uom?.uomCode || '' : l.uom || '',
+          qty,
+          price,
+          amount: num(l.totalPrice) || qty * price,
+        });
+      });
+    });
+
+    return out.sort((a, b) => b.date.localeCompare(a.date) || String(b.grnNo).localeCompare(String(a.grnNo)));
+  }, [grns, maps, warehouseId, grnNo, productId, dateFrom, dateTo, status]);
+
+  const totals = useMemo(
+    () => ({
+      qty: rows.reduce((s, r) => s + r.qty, 0),
+      amount: rows.reduce((s, r) => s + r.amount, 0),
+      grnCount: new Set(rows.map((r) => r.grnNo)).size,
+    }),
+    [rows]
+  );
+
   const handleViewReport = (e) => {
     e.preventDefault();
+    if (form.dateFrom && form.dateTo && form.dateFrom > form.dateTo) {
+      alert('Date From must be before Date To');
+      return;
+    }
     const params = new URLSearchParams();
-    if (form.warehouse) params.set('warehouse', form.warehouse);
-    if (form.grnNo) params.set('grnNo', form.grnNo);
-    if (form.product) params.set('product', form.product);
-    if (form.dateFrom) params.set('dateFrom', form.dateFrom);
-    if (form.dateTo) params.set('dateTo', form.dateTo);
-
+    ['warehouse', 'grnNo', 'product', 'dateFrom', 'dateTo'].forEach((k) => form[k] && params.set(k, form[k]));
+    params.set('status', form.status); // "" = All statuses
     setSearchParams(params);
   };
 
+  const handleReset = () => setSearchParams(new URLSearchParams());
+
+  // ✅ Excel Export — දැනට filter කරලා පේන rows ටික .xlsx එකට
+  const handleExportExcel = () => {
+    if (rows.length === 0) {
+      alert('No records to export.');
+      return;
+    }
+
+    const headers = [
+      '#', 'GRN No', 'Date', 'Type', 'Invoice', 'Supplier', 'Warehouse',
+      'Item Code', 'Item Name', 'Color', 'Size', 'UOM',
+      'Received Qty', 'Unit Cost', 'Amount', 'Status',
+    ];
+
+    const body = rows.map((r, i) => [
+      i + 1, r.grnNo, r.date, r.type, r.invoiceNo, r.supplier, r.warehouse,
+      r.itemCode, r.itemName, r.color, r.size, r.uom,
+      r.qty, r.price, r.amount, r.status,
+    ]);
+
+    const whName = maps.wh.get(warehouseId)?.warehouseName || 'All Warehouses';
+    const filterLines = [
+      ['GRN Details Report'],
+      [`Warehouse: ${whName}`],
+      [`Status: ${status || 'All Statuses'}`],
+      [`Period: ${dateFrom || '-'} to ${dateTo || '-'}`],
+      [`Generated: ${new Date().toLocaleString()}`],
+      [],
+    ];
+
+    const totalRow = [
+      '', `Total — ${totals.grnCount} GRN(s), ${rows.length} line(s)`,
+      '', '', '', '', '', '', '', '', '', '',
+      totals.qty, '', totals.amount, '',
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet([...filterLines, headers, ...body, [], totalRow]);
+
+    // Column widths
+    ws['!cols'] = [
+      { wch: 5 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 24 }, { wch: 22 },
+      { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 10 }, { wch: 8 },
+      { wch: 13 }, { wch: 12 }, { wch: 14 }, { wch: 16 },
+    ];
+
+    // Qty / Unit Cost / Amount columns වලට number format
+    const headerRow = filterLines.length;
+    const lastRow = headerRow + body.length + 2;
+    for (let r = headerRow + 1; r <= lastRow; r++) {
+      [[12, '#,##0.##'], [13, '#,##0.00'], [14, '#,##0.00']].forEach(([c, z]) => {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
+        if (cell && typeof cell.v === 'number') cell.z = z;
+      });
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'GRN Details');
+
+    const datePart = dateFrom || dateTo ? `_${dateFrom || 'start'}_to_${dateTo || 'end'}` : '';
+    XLSX.writeFile(wb, `GRN_Report${datePart}.xlsx`);
+  };
+
+  const selectCls =
+    'w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800 font-semibold text-slate-800';
+  const inputCls =
+    'w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800';
+  const labelCls = 'block text-xs font-bold text-slate-500 uppercase tracking-wider';
+
+  const selectedWh = maps.wh.get(warehouseId);
+
   return (
     <div className="w-full space-y-6 text-sm font-normal text-slate-700 p-6 md:p-8 bg-slate-50 min-h-screen">
-      
-      {/* HEADER SECTION */}
+      {/* HEADER */}
       <div className="flex justify-between items-center bg-white p-5 rounded-xl border border-slate-100 shadow-xs print:hidden">
         <div>
           <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
             <FileBarChart className="text-emerald-900" size={20} /> GRN Details Report
           </h2>
-          <p className="text-slate-400 text-xs mt-0.5">Filter and generate Goods Received Note and stock match reports.</p>
+          <p className="text-slate-400 text-xs mt-0.5">Goods received by GRN, item, warehouse and date.</p>
         </div>
-        <button 
-          onClick={() => window.print()} 
-          className="inline-flex items-center gap-2 text-white bg-emerald-900 hover:bg-emerald-800 font-semibold text-sm px-5 py-2 rounded-lg shadow-md transition-all cursor-pointer"
-        >
-          <Printer size={16} /> Print Report
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportExcel}
+            disabled={loading || rows.length === 0}
+            className="inline-flex items-center gap-2 text-emerald-900 bg-white border border-emerald-900 hover:bg-emerald-50 font-semibold text-sm px-5 py-2 rounded-lg transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <FileSpreadsheet size={16} /> Export Excel
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-2 text-white bg-emerald-900 hover:bg-emerald-800 font-semibold text-sm px-5 py-2 rounded-lg shadow-md transition-all cursor-pointer"
+          >
+            <Printer size={16} /> Print Report
+          </button>
+        </div>
       </div>
 
-      {/* FILTER FORM (ස්ක්‍රීන්ෂොට් එකේ ඇති ආකාරයටම සකස් කළ Form Layout එක) */}
+      {/* FILTERS */}
       <div className="bg-white rounded-xl border border-slate-100 p-6 shadow-xs max-w-5xl print:hidden">
         <form onSubmit={handleViewReport} className="space-y-5">
-          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            
-            {/* WAREHOUSE */}
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Warehouse</label>
-              <select 
-                value={form.warehouse} 
-                onChange={(e) => setForm({ ...form, warehouse: e.target.value })}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800 font-semibold text-slate-800"
-              >
-                <option value="">Select Warehouse / Depot</option>
-                {warehouses.map(w => (
+              <label className={labelCls}>Warehouse</label>
+              <select value={form.warehouse} onChange={(e) => setForm({ ...form, warehouse: e.target.value })} className={selectCls}>
+                <option value="">All Warehouses</option>
+                {warehouses.map((w) => (
                   <option key={w._id} value={w._id}>[{w.warehouseCode}] {w.warehouseName}</option>
                 ))}
               </select>
             </div>
 
-            {/* GRN NO */}
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">GRN No</label>
-              <select 
-                value={form.grnNo} 
-                onChange={(e) => setForm({ ...form, grnNo: e.target.value })}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800 font-semibold text-slate-800"
-              >
-                <option value="">Select Grn</option>
-                {grns.map(g => (
-                  <option key={g._id || g.grnNo} value={g.grnNo}>{g.grnNo}</option>
+              <label className={labelCls}>GRN No</label>
+              <select value={form.grnNo} onChange={(e) => setForm({ ...form, grnNo: e.target.value })} className={selectCls}>
+                <option value="">All GRNs</option>
+                {grnOptions.map((g) => (
+                  <option key={g._id} value={g.grnNo}>
+                    {g.grnNo} — {toDay(g.grnDate)} {g.invoiceNo ? `(${g.invoiceNo})` : ''}
+                  </option>
                 ))}
               </select>
             </div>
 
-            {/* PRODUCT / ITEM */}
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Product / Item</label>
-              <select 
-                value={form.product} 
-                onChange={(e) => setForm({ ...form, product: e.target.value })}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800 font-semibold text-slate-800"
-              >
-                <option value="">Select an item</option>
-                {items.map(item => (
-                  <option key={item._id} value={item._id}>[{item.itemCode}] {item.itemName || item.materialName}</option>
+              <label className={labelCls}>Product / Item</label>
+              <select value={form.product} onChange={(e) => setForm({ ...form, product: e.target.value })} className={selectCls}>
+                <option value="">All Items</option>
+                {itemList.map((it) => (
+                  <option key={it._id} value={it._id}>[{it.itemCode}] {it.itemName} ({it.itemType})</option>
                 ))}
               </select>
             </div>
 
-            {/* DATE RANGE */}
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Date Range</label>
+              <label className={labelCls}>Date Range</label>
               <div className="grid grid-cols-2 gap-2">
-                <input 
-                  type="date" 
-                  placeholder="Date From"
-                  value={form.dateFrom} 
-                  onChange={(e) => setForm({ ...form, dateFrom: e.target.value })}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800" 
-                />
-                <input 
-                  type="date" 
-                  placeholder="Date To"
-                  value={form.dateTo} 
-                  onChange={(e) => setForm({ ...form, dateTo: e.target.value })}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800" 
-                />
+                <input type="date" value={form.dateFrom} onChange={(e) => setForm({ ...form, dateFrom: e.target.value })} className={inputCls} />
+                <input type="date" value={form.dateTo} onChange={(e) => setForm({ ...form, dateTo: e.target.value })} className={inputCls} />
               </div>
             </div>
 
+            <div className="space-y-1.5">
+              <label className={labelCls}>Status</label>
+              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={selectCls}>
+                <option value="Completed">Completed (stock updated)</option>
+                <option value="Pending Approval">Pending Approval</option>
+                <option value="Draft">Draft</option>
+                <option value="">All Statuses</option>
+              </select>
+            </div>
           </div>
 
-          {/* VIEW REPORT BUTTON (නිල් පාටින් යුත් අදාළ බොත්තම) */}
-          <div className="pt-4 flex items-center justify-end">
-            <button 
-              type="submit" 
-              className="inline-flex items-center px-6 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm gap-2 transition-all cursor-pointer"
-            >
+          <div className="pt-4 flex items-center justify-end gap-3">
+            <button type="button" onClick={handleReset} className="inline-flex items-center px-5 py-3 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg gap-2 cursor-pointer">
+              <RotateCcw size={16} /> Reset
+            </button>
+            <button type="submit" className="inline-flex items-center px-6 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm gap-2 transition-all cursor-pointer">
               <Search size={18} /> View Report
             </button>
           </div>
-
         </form>
       </div>
 
-      {/* REPORT DATA RESULTS TABLE */}
+      {/* RESULTS */}
       <div className="bg-white rounded-xl border border-slate-100 p-6 shadow-xs">
-        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-4">Report Results</h3>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">GRN Details</h3>
+          <span className="text-xs text-slate-500">
+            {selectedWh ? `${selectedWh.warehouseName} · ` : ''}
+            {status || 'All statuses'}
+            {(dateFrom || dateTo) ? ` · ${dateFrom || '…'} to ${dateTo || '…'}` : ''}
+          </span>
+        </div>
+
         {loading ? (
           <div className="text-center py-12 text-slate-400 flex items-center justify-center gap-2">
             <Loader2 className="animate-spin text-emerald-900" size={18} /> Loading records...
@@ -213,37 +374,75 @@ const GrnReportView = () => {
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[11px] text-slate-400 font-semibold uppercase tracking-wider">
-                  <th className="py-3 px-4">#</th>
-                  <th className="py-3 px-4">Material / Item</th>
-                  <th className="py-3 px-4">Color</th>
-                  <th className="py-3 px-4">Size</th>
-                  <th className="py-3 px-4">Warehouse</th>
-                  <th className="py-3 px-4 text-right">Available Qty</th>
+                  <th className="py-3 px-3">#</th>
+                  <th className="py-3 px-3">GRN No</th>
+                  <th className="py-3 px-3">Date</th>
+                  <th className="py-3 px-3">Type</th>
+                  <th className="py-3 px-3">Invoice</th>
+                  <th className="py-3 px-3">Supplier</th>
+                  <th className="py-3 px-3">Warehouse</th>
+                  <th className="py-3 px-3">Material / Item</th>
+                  <th className="py-3 px-3">Color</th>
+                  <th className="py-3 px-3">Size</th>
+                  <th className="py-3 px-3 text-right">Received Qty</th>
+                  <th className="py-3 px-3 text-right">Unit Cost</th>
+                  <th className="py-3 px-3 text-right">Amount</th>
+                  {!status && <th className="py-3 px-3">Status</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {filteredStocks.length > 0 ? filteredStocks.map((s, index) => (
-                  <tr key={s._id || index} className="hover:bg-slate-50">
-                    <td className="py-3 px-4 text-slate-400">{index + 1}</td>
-                    <td className="py-3 px-4 font-bold text-slate-900">
-                      {s.material?.itemName || s.material?.materialName || 'Item'} [{s.material?.itemCode || s.material?.materialCode || ''}]
-                    </td>
-                    <td className="py-3 px-4">{s.color?.colorName || s.color?.name || 'Default'}</td>
-                    <td className="py-3 px-4">{s.size?.sizeCode || s.size?.name || 'Default'}</td>
-                    <td className="py-3 px-4">{s.warehouse?.warehouseName || 'Depot'}</td>
-                    <td className="py-3 px-4 text-right font-bold text-emerald-800">{s.qty || 0}</td>
-                  </tr>
-                )) : (
+                {rows.length > 0 ? (
+                  rows.map((r, i) => (
+                    <tr key={r.key} className="hover:bg-slate-50">
+                      <td className="py-3 px-3 text-slate-400">{i + 1}</td>
+                      <td className="py-3 px-3 font-bold text-emerald-950 whitespace-nowrap">{r.grnNo}</td>
+                      <td className="py-3 px-3 whitespace-nowrap">{r.date || '-'}</td>
+                      <td className="py-3 px-3 text-emerald-800">{r.type}</td>
+                      <td className="py-3 px-3">{r.invoiceNo}</td>
+                      <td className="py-3 px-3">{r.supplier}</td>
+                      <td className="py-3 px-3">{r.warehouse}</td>
+                      <td className="py-3 px-3 font-bold text-slate-900">
+                        {r.itemName} {r.itemCode && <span className="text-slate-500 font-medium">[{r.itemCode}]</span>}
+                      </td>
+                      <td className="py-3 px-3">{r.color}</td>
+                      <td className="py-3 px-3">{r.size}</td>
+                      <td className="py-3 px-3 text-right font-bold text-emerald-800 whitespace-nowrap">
+                        {r.qty.toLocaleString()} {r.uom && <span className="text-xs text-slate-400 uppercase">{r.uom}</span>}
+                      </td>
+                      <td className="py-3 px-3 text-right">{fmt(r.price)}</td>
+                      <td className="py-3 px-3 text-right font-semibold">{fmt(r.amount)}</td>
+                      {!status && (
+                        <td className="py-3 px-3">
+                          <span className={`px-2 py-0.5 border rounded text-[10px] font-bold uppercase whitespace-nowrap ${statusCls(r.status)}`}>{r.status}</span>
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                ) : (
                   <tr>
-                    <td colSpan="6" className="py-16 text-center text-slate-400 italic">No matching stock records found.</td>
+                    <td colSpan={status ? 13 : 14} className="py-16 text-center text-slate-400 italic">
+                      No GRN records found for the selected filters.
+                    </td>
                   </tr>
                 )}
               </tbody>
+              {rows.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800">
+                    <td colSpan="10" className="py-3 px-3">
+                      Total — {totals.grnCount} GRN(s), {rows.length} line(s)
+                    </td>
+                    <td className="py-3 px-3 text-right text-emerald-800">{totals.qty.toLocaleString()}</td>
+                    <td className="py-3 px-3"></td>
+                    <td className="py-3 px-3 text-right">LKR {fmt(totals.amount)}</td>
+                    {!status && <td></td>}
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )}
       </div>
-
     </div>
   );
 };

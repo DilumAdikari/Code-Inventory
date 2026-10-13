@@ -424,7 +424,7 @@ const GoodsIssueWindow = () => {
         {/* PRINT SIGNATURE BLOCK */}
         <div className="print-signatures pt-8">
           <div className="text-center w-1/3">
-            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-30">Factory Signature</p>
+            <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-30">Customer Signature</p>
           </div>
           <div className="text-center w-1/3">
             <p className="border-t border-black pt-1 font-semibold text-xs inline-block w-30">Prepared By</p>

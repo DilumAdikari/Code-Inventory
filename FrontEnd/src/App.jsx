@@ -42,6 +42,9 @@ import FinishedGoods from './pages/FinishedGoods';
 // 🌟 GRN Report View (ෆෝම් එක සහ ටේබල් එක පෙන්වන එකම පේජ් එක) සම්බන්ධ කිරීම
 import GrnReportView from './pages/reports/GrnReportView'; 
 
+// 🌟 Goods Issue Report View සම්බන්ධ කිරීම (අලුතින් එක් කළා)
+import GoodsIssueReportView from './pages/reports/GoodsIssueReportView';
+
 // 🌟 GRN Return පේජ් එක සම්බන්ධ කිරීම (අලුතින් එක් කළා)
 import GrnReturn from './pages/GrnReturn'; 
 
@@ -74,6 +77,7 @@ function App() {
     if (path.startsWith('/purchases')) return 'Purchasing'; 
     if (path.startsWith('/invoices')) return 'Sales Invoices'; // 🌟 Invoice Title එක එක් කළා
     if (path.startsWith('/reports/grn')) return 'GRN Report'; // 🌟 GRN Report Title එක එක් කළා
+    if (path.startsWith('/reports/goods-issue')) return 'Goods Issue Report'; // 🌟 Goods Issue Report Title එක එක් කළා
     if (path.startsWith('/grn-return')) return 'GRN Return'; // 🌟 GRN Return Title එක එක් කළා
     if (path.startsWith('/notifications')) return 'Notifications'; 
     if (path.startsWith('/sales-orders/print')) return 'Sales Order Print View'; 
@@ -158,6 +162,9 @@ function App() {
               {/* 🌟 GRN Report Routes (GrnReportView එකම පාවිච්චි කරයි) */}
               <Route path="/reports/grn" element={hasRouteAccess('grnHistory') ? <GrnReportView /> : <Navigate to="/dashboard" replace />} />
               <Route path="/reports/grn/view" element={hasRouteAccess('grnHistory') ? <GrnReportView /> : <Navigate to="/dashboard" replace />} />
+
+              {/* 🌟 Goods Issue Report Route (අලුතින් එක් කළා) */}
+              <Route path="/reports/goods-issue" element={hasRouteAccess('materialIssuing') ? <GoodsIssueReportView /> : <Navigate to="/dashboard" replace />} />
 
               {/* 🌟 GRN Return Route එක (අලුතින් එක් කළා) */}
               <Route path="/grn-return" element={hasRouteAccess('grnHistory') ? <GrnReturn /> : <Navigate to="/dashboard" replace />} />
