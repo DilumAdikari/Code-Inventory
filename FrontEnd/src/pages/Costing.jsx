@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, ArrowLeft, Check, FileSpreadsheet, X, Printer, Send } from 'lucide-react';
 import axios from 'axios';
 
+// Letters, numbers, "-" and "/" only, max 20 characters
+const COSTING_NO_REGEX = /^[A-Z0-9\-\/]{1,20}$/;
+
 const Costing = () => {
   const [costingList, setCostingList] = useState([]);
   const [salesOrders, setSalesOrders] = useState([]);
@@ -21,6 +24,10 @@ const Costing = () => {
     workflowTemplate: ''
   });
 
+  // Manual costing number (modal input)
+  const [costingNo, setCostingNo] = useState('');
+  const [costingNoError, setCostingNoError] = useState('');
+
   const [items, setItems] = useState([]);
   const [cmCost, setCmCost] = useState(0);
   const [overheadCost, setOverheadCost] = useState(0);
@@ -31,7 +38,7 @@ const Costing = () => {
   const [dbSuppliers, setDbSuppliers] = useState([]);
   const [colors, setColors] = useState([]);
 
-  // ✅ FIX 1 — store costingNo separately so print view always has it
+  // Stored separately so the print view always has the costing number
   const [activeCostingNo, setActiveCostingNo] = useState('');
 
   const currentUsername = localStorage.getItem('username') || 'DILUM';
@@ -66,8 +73,6 @@ const Costing = () => {
   const handleRowClick = (costing) => {
     setCostingId(costing._id);
     setActiveStatus(costing.status);
-
-    // ✅ FIX 1 — set costingNo directly from the record when row is clicked
     setActiveCostingNo(costing.costingNo || '');
 
     setInitialForm({
@@ -103,6 +108,14 @@ const Costing = () => {
 
   const handleProceedToSheet = async (e) => {
     e.preventDefault();
+
+    const normalizedNo = costingNo.trim().toUpperCase();
+
+    if (!COSTING_NO_REGEX.test(normalizedNo)) {
+      setCostingNoError('අකුරු සහ ඉලක්කම් (- / සමඟ) 20 ට වඩා නොවිය යුතුයි');
+      return;
+    }
+
     if (!initialForm.salesOrder || !initialForm.workflowTemplate) {
       alert("Please select a valid Sales Order and Approval Workflow Matrix.");
       return;
@@ -115,6 +128,7 @@ const Costing = () => {
       const initialItems = [{ material: '', color: '', supplier: defaultSupplierId, uom: 'Pcs', consumption: 0, wastagePercentage: 0, unitCost: 0, totalCost: 0, totalWithWastage: 0 }];
 
       const initialPayload = {
+        costingNo: normalizedNo,
         costingDate: initialForm.costingDate,
         salesOrder: initialForm.salesOrder,
         workflowTemplate: initialForm.workflowTemplate,
@@ -130,10 +144,11 @@ const Costing = () => {
       const response = await axios.post('http://192.168.1.30:5003/api/costing/save', initialPayload);
       if (response.data && response.data._id) {
         setCostingId(response.data._id);
-        // ✅ FIX 1 — capture costingNo from create response
-        setActiveCostingNo(response.data.costingNo || '');
+        setActiveCostingNo(response.data.costingNo || normalizedNo);
       }
 
+      setCostingNo('');
+      setCostingNoError('');
       setActiveStatus('Draft');
       setIsInitialModalOpen(false);
       setIsListView(false);
@@ -144,7 +159,8 @@ const Costing = () => {
       loadInitialData();
     } catch (err) {
       console.error(err);
-      alert("Failed to initialize costing draft.");
+      // Backend 409 (duplicate) and 400 (format) messages show here
+      alert(err.response?.data?.message || "Failed to initialize costing draft.");
     } finally {
       setInitiationLoading(false);
     }
@@ -224,6 +240,7 @@ const Costing = () => {
           totalWithWastage: Number(item.totalWithWastage || 0)
         }));
 
+      // costingNo is not sent here: it was set once at creation and is not editable
       const payload = {
         costingId,
         costingDate: initialForm.costingDate,
@@ -240,7 +257,6 @@ const Costing = () => {
 
       const response = await axios.post('http://192.168.1.30:5003/api/costing/save', payload);
 
-      // ✅ FIX 1 — update costingNo after every save response
       if (response.data && response.data.costingNo) {
         setActiveCostingNo(response.data.costingNo);
       }
@@ -278,7 +294,6 @@ const Costing = () => {
     loadInitialData();
   };
 
-  // ✅ FIX 2 — added Pending Approval status style
   const getStatusStyle = (status) => {
     if (status === 'Completed') return 'bg-emerald-50 border-emerald-200 text-emerald-700 font-bold';
     if (status === 'Pending Approval') return 'bg-amber-50 border-amber-200 text-amber-700 font-bold';
@@ -306,6 +321,8 @@ const Costing = () => {
             onClick={() => {
               setCostingId(null);
               setActiveCostingNo('');
+              setCostingNo('');
+              setCostingNoError('');
               setInitialForm({ costingDate: new Date().toISOString().split('T')[0], salesOrder: '', workflowTemplate: '' });
               setIsInitialModalOpen(true);
             }}
@@ -373,6 +390,23 @@ const Costing = () => {
 
             <form onSubmit={handleProceedToSheet} className="p-5 space-y-4 text-sm">
               <div className="space-y-1">
+                <label className="block text-[11px] text-slate-400 font-medium uppercase">Costing No *</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={20}
+                  placeholder="E2420001435LD01"
+                  value={costingNo}
+                  onChange={(e) => {
+                    setCostingNo(e.target.value.toUpperCase());
+                    setCostingNoError('');
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm focus:outline-none"
+                />
+                {costingNoError && <p className="text-xs text-rose-600">{costingNoError}</p>}
+              </div>
+
+              <div className="space-y-1">
                 <label className="block text-[11px] text-slate-400 font-medium uppercase">Costing Date</label>
                 <input type="date" required value={initialForm.costingDate} onChange={(e) => setInitialForm({ ...initialForm, costingDate: e.target.value })} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm focus:outline-none" />
               </div>
@@ -409,13 +443,13 @@ const Costing = () => {
               <ArrowLeft size={14} /> Back to Registry {activeStatus === 'Draft' && '(Saves Draft)'}
             </button>
             <div className="text-xs font-semibold px-4 py-2 bg-white rounded-lg border border-slate-100 flex gap-4">
+              <span>Costing: <strong className="text-emerald-950">{activeCostingNo || 'N/A'}</strong></span>
               <span>Status: <strong className="text-emerald-700">{activeStatus}</strong></span>
               <span>Order: <strong className="text-emerald-900">{salesOrders.find(s => s._id === initialForm.salesOrder)?.orderRef || 'SO'}</strong></span>
             </div>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-sm">
-            {/* ✅ FIX 2 — locked for both Completed AND Pending Approval */}
             <fieldset disabled={activeStatus === 'Completed' || activeStatus === 'Pending Approval'} className="w-full">
               <table className="w-full text-left text-sm border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-100 text-[11px] text-slate-400 font-semibold uppercase">
@@ -487,7 +521,7 @@ const Costing = () => {
                     <input type="number" value={cmCost || ''} onChange={(e) => setCmCost(e.target.value)} placeholder="0.00" className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10" />
                   </div>
                   <div className="grid grid-cols-3 gap-3 items-center">
-                    <label className="text-xs text-slate-400 uppercase">Cutting Chaeges</label>
+                    <label className="text-xs text-slate-400 uppercase">Cutting Charges</label>
                     <input type="number" value={overheadCost || ''} onChange={(e) => setOverheadCost(e.target.value)} placeholder="0.00" className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10" />
                   </div>
                 </div>
@@ -504,7 +538,6 @@ const Costing = () => {
               </div>
             </fieldset>
 
-            {/* ✅ FIX 2 — 3 buttons: Save Draft, Submit for Approval, action message for locked states */}
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
               {activeStatus === 'Draft' ? (
                 <>
@@ -548,7 +581,6 @@ const Costing = () => {
                 <p className="text-xs text-slate-400 mt-1">Commercial Costing & Yield Matrix Statement</p>
               </div>
               <div className="text-right text-xs space-y-1">
-                {/* ✅ FIX 1 — uses activeCostingNo state directly — no lookup needed */}
                 <div>COSTING NO: <span className="font-bold text-slate-900">{activeCostingNo || 'N/A'}</span></div>
                 <div>DATE: <span className="font-medium">{initialForm.costingDate}</span></div>
                 <div>PREPARED BY: <span className="font-semibold uppercase">{currentUsername}</span></div>
