@@ -16,7 +16,6 @@ const GRNRegister = () => {
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🌟 ✅ අලුතින් එක් කළ Filter & Pagination States
   const [searchGrn, setSearchGrn] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -107,7 +106,7 @@ const GRNRegister = () => {
 
   useEffect(() => { loadGRNData(); }, []);
 
-  // 🌟 ✅ Filtering Logic (GRN No, Status, Date Range)
+
   const filteredGrns = grnList.filter(g => {
     const matchesGrn = (g.grnNo || '').toLowerCase().includes(searchGrn.toLowerCase());
     const matchesStatus = statusFilter === '' || g.status === statusFilter;
@@ -119,7 +118,7 @@ const GRNRegister = () => {
     return matchesGrn && matchesStatus && matchesDate;
   });
 
-  // 🌟 ✅ Pagination Logic (20 items per page)
+
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentGrns = filteredGrns.slice(indexOfFirstItem, indexOfLastItem);
