@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X, Loader2, Bell, ShieldAlert } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../api/config";  
 
 const Notifications = () => {
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null); 
 
-  // 🌟 ලොග් වෙලා ඉන්න යූසර්ගේ නම ස්ටේටස් එකක් විදිහට ආරක්ෂිතව ගත්තා (Default 'DILUM')
+  
   const [currentUsername, setCurrentUsername] = useState(() => {
     const savedUser = localStorage.getItem('username');
     return savedUser ? savedUser.trim().toUpperCase() : 'DILUM';
@@ -17,9 +18,9 @@ const Notifications = () => {
     try {
       setLoading(true);
       
-      // 🌟 ✅ බැකෙන්ඩ් API එකට නම 100%ක්ම කැපිටල් කරලා ආරක්ෂිතව යවනවා
+      
       const targetUser = user || currentUsername;
-      const response = await axios.get(`http://192.168.1.30:5003/api/approvals/pending?username=${targetUser}`);
+      const response = await axios.get(`${API_URL}/approvals/pending?username=${targetUser}`);
       
       setPendingApprovals(response.data || []);
       setLoading(false);
@@ -31,12 +32,12 @@ const Notifications = () => {
   };
 
   useEffect(() => {
-    // LocalStorage එකෙන් අලුත්ම නම කියවා ස්ටේට් එක අප්ඩේට් කිරීම
+    
     const savedUser = localStorage.getItem('username');
     if (savedUser) {
       const formattedUser = savedUser.trim().toUpperCase();
       setCurrentUsername(formattedUser);
-      loadPendingApprovals(formattedUser); // 🌟 කෙලින්ම ෆන්ක්ෂන් එකටම පාස් කළා ලෙඩ නොවෙන්න
+      loadPendingApprovals(formattedUser); 
     } else {
       loadPendingApprovals('DILUM');
     }
@@ -48,14 +49,14 @@ const Notifications = () => {
     try {
       setActionLoading(id);
       
-      // ඩේටාබේස් එකට Approve/Reject ස්ටේටස් එක යැවීම
-      await axios.post(`http://192.168.1.30:5003/api/approvals/${id}/action`, {
+      
+      await axios.post(`${API_URL}/approvals/${id}/action`, {
         status, 
         user: currentUsername
       });
 
       alert(`Request has been successfully ${status.toLowerCase()}!`);
-      loadPendingApprovals(currentUsername); // ලිස්ට් එක නැවත අප්ඩේට් කිරීම
+      loadPendingApprovals(currentUsername); 
     } catch (err) {
       alert("Action processed locally or backend connection update pending.");
       setPendingApprovals(pendingApprovals.filter(item => item._id !== id));

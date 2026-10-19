@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, CheckCircle, AlertCircle, Loader2, X } from 'lucide-react';
+import { API_URL } from "../api/config";   
 
 const MaterialIssuing = () => {
   const [issuesList, setIssuesList] = useState([]);
@@ -12,29 +13,29 @@ const MaterialIssuing = () => {
 
   const [productionOrders, setProductionOrders] = useState([]);
   const [workflows, setWorkflows] = useState([]);
-  const [factories, setFactories] = useState([]); // 🌟 Factory Master ඩේටා සඳහා State එක
+  const [factories, setFactories] = useState([]); 
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [manualIssueForm, setManualIssueForm] = useState({
     salesOrderId: '',
     productionOrderId: '',
     workflowId: '',
-    plantId: '', // 🌟 Factory / Plant ID එක
+    plantId: '', 
     issueDate: new Date().toISOString().split('T')[0],
     items: []
   });
   const [poBOMItems, setPoBOMItems] = useState([]);
   const [saving, setSaving] = useState(false);
 
-  // ✅ current logged in user
+
   const currentUsername = localStorage.getItem('username') || 'ADMIN';
 
   const fetchIssues = async () => {
     try {
       const [response, poRes, wfRes, factoryRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/material-issues'),
-        axios.get('http://192.168.1.30:5003/api/production-orders'),
-        axios.get('http://192.168.1.30:5003/api/workflows'),
-        axios.get('http://192.168.1.30:5003/api/factories').catch(() => ({ data: [] })) // 🌟 Factory Master API එකෙන් ලබා ගැනීම
+        axios.get('${API_URL}/material-issues'),
+        axios.get('${API_URL}/production-orders'),
+        axios.get('${API_URL}/workflows'),
+        axios.get('${API_URL}/factories').catch(() => ({ data: [] })) 
       ]);
       setIssuesList(response.data);
       setProductionOrders(poRes.data);
@@ -55,7 +56,7 @@ const MaterialIssuing = () => {
     setManualIssueForm(prev => ({ ...prev, productionOrderId: poId, salesOrderId: soId }));
     if (!poId) { setPoBOMItems([]); return; }
     try {
-      const res = await axios.get(`http://192.168.1.30:5003/api/material-issues/production-order-bom/${poId}`);
+      const res = await axios.get(`${API_URL}/material-issues/production-order-bom/${poId}`);
       setPoBOMItems(res.data);
     } catch (err) {
       console.error("BOM load failed", err);
@@ -86,11 +87,11 @@ const MaterialIssuing = () => {
         salesOrderId: manualIssueForm.salesOrderId,
         productionOrderId: manualIssueForm.productionOrderId,
         workflowId: manualIssueForm.workflowId,
-        plantId: manualIssueForm.plantId, // 🌟 Factory / Plant ID එක යැවීම
+        plantId: manualIssueForm.plantId, 
         items: poBOMItems,
         createdBy: currentUsername
       };
-      await axios.post('http://192.168.1.30:5003/api/material-issues/manual-issue', payload);
+      await axios.post('${API_URL}/material-issues/manual-issue', payload);
       setIsManualModalOpen(false);
       setManualIssueForm({
         salesOrderId: '', productionOrderId: '', workflowId: '', plantId: '',
@@ -106,7 +107,7 @@ const MaterialIssuing = () => {
     }
   };
 
-  // ✅ status display helper
+ 
   const getStatusDisplay = (status) => {
     if (status === 'ISSUED') return { label: 'Fully Issued', style: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: <CheckCircle size={12} /> };
     if (status === 'Pending Approval') return { label: 'Pending Approval', style: 'bg-amber-50 text-amber-700 border-amber-200', icon: <AlertCircle size={12} /> };
@@ -198,7 +199,7 @@ const MaterialIssuing = () => {
                 const statusInfo = getStatusDisplay(issue.status);
                 const issueIdLabel = issue.issueNo || `ISS-${issue._id?.slice(-6).toUpperCase()}`;
                 
-                // 🌟 Factory Schema එකේ ඇති 'name' ෆීල්ඩ් එක මඟින් නම ලබා ගැනීම
+                
                 const plantLabel = issue.plant?.name || issue.plant?.factoryCode || 'N/A';
                 
                 return (
@@ -241,7 +242,7 @@ const MaterialIssuing = () => {
         </div>
       </div>
 
-      {/* ✅ CREATE MODAL — with workflow & factory plant selector */}
+    
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl animate-in zoom-in-95 duration-200">
@@ -281,7 +282,7 @@ const MaterialIssuing = () => {
                 </div>
               </div>
 
-              {/* 🌟 Plant / Factory Master Selector */}
+              
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">Plant / Factory *</label>
                 <select

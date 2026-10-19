@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, X, Calendar, User, Hash, FileText, Building2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_URL } from "../api/config";
 
-const API_BASE = 'http://192.168.1.30:5003/api';
+const API_BASE = '${API_URL}';
 
 const STATUS_OPTIONS = [
   'Draft',

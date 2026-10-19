@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, Warehouse, MapPin, FileText, CheckCircle } from 'lucide-react';
 import axios from 'axios';
-
+import { API_URL } from "../api/config";
 const WarehouseRegistry = () => {
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,7 +18,7 @@ const WarehouseRegistry = () => {
   const loadWarehouses = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('http://192.168.1.30:5003/api/warehouses');
+      const res = await axios.get('${API_URL}/warehouses');
       setWarehouses(res.data || []);
       setLoading(false);
     } catch (err) {
@@ -33,7 +33,7 @@ const WarehouseRegistry = () => {
     e.preventDefault();
     try {
       setSubmitting(true);
-      await axios.post('http://192.168.1.30:5003/api/warehouses/register', form);
+      await axios.post('${API_URL}/warehouses/register', form);
       alert("Warehouse Registered Successfully!");
       setIsModalOpen(false);
       setForm({ warehouseCode: '', warehouseName: '', location: '', remarks: '' });

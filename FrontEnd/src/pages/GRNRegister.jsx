@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, ClipboardCheck, X, Check, Printer, ArrowLeft, Search, Send, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../api/config";   
 
 const GRNRegister = () => {
   const [grnList, setGrnList] = useState([]);
@@ -52,17 +53,17 @@ const GRNRegister = () => {
     try {
       setLoading(true);
       const [grnRes, supRes, matRes, fgRes, whRes, colRes, sizeRes, txRes, poRes, issRes, wfRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/grn').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/suppliers').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/materials').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/finished-goods').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/warehouses').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/colors').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/sizes').catch(() => ({ data: [] })), 
-        axios.get('http://192.168.1.30:5003/api/transaction-types').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/grn/approved-pos').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/grn/issuing-records').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/workflows').catch(() => ({ data: [] }))
+        axios.get('${API_URL}/grn').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/suppliers').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/materials').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/finished-goods').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/warehouses').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/colors').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/sizes').catch(() => ({ data: [] })), 
+        axios.get('${API_URL}/transaction-types').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/grn/approved-pos').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/grn/issuing-records').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/workflows').catch(() => ({ data: [] }))
       ]);
 
       const combined = [
@@ -200,7 +201,7 @@ const GRNRegister = () => {
         initialItems = [{ material: '', color: '', size: '', uom: 'Pcs', receivedQty: 0, unitPrice: 0, totalPrice: 0, storeLocation: form.globalWarehouse, searchQuery: '' }];
       }
 
-      const res = await axios.post('http://192.168.1.30:5003/api/grn/save', {
+      const res = await axios.post('${API_URL}/grn/save', {
         grnDate: form.grnDate, grnType: form.grnType, workflow: form.workflow,
         purchaseOrder: form.purchaseOrder || null, materialIssuing: form.materialIssuing || null,
         supplier: form.supplier || null, invoiceNo: form.invoiceNo, vehicleNo: form.vehicleNo,
@@ -295,7 +296,7 @@ const GRNRegister = () => {
     }));
     try {
       setSubmitting(true);
-      await axios.post('http://192.168.1.30:5003/api/grn/save', {
+      await axios.post('${API_URL}/grn/save', {
         grnId, grnDate: form.grnDate, grnType: form.grnType, workflow: form.workflow,
         purchaseOrder: form.purchaseOrder || null, materialIssuing: form.materialIssuing || null,
         supplier: form.supplier || null, invoiceNo: form.invoiceNo, vehicleNo: form.vehicleNo,
@@ -346,7 +347,7 @@ const GRNRegister = () => {
         storeLocation: item.storeLocation || form.globalWarehouse
       }));
 
-      await axios.post('http://192.168.1.30:5003/api/grn/save', {
+      await axios.post('${API_URL}/grn/save', {
         grnId,
         grnDate: form.grnDate,
         grnType: form.grnType,
@@ -365,7 +366,7 @@ const GRNRegister = () => {
       });
 
       const approvalRes = await axios.post(
-        `http://192.168.1.30:5003/api/grn/submit-approval/${grnId}`,
+        `${API_URL}/grn/submit-approval/${grnId}`,
         { createdBy: currentUsername }
       );
 

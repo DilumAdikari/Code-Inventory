@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Plus, Search, Loader2, X, Shirt, Package, Edit2 } from 'lucide-react';
+import { API_URL } from "../api/config";
 
 const FinishedGoods = () => {
   const [products, setProducts] = useState([]);
@@ -12,7 +13,7 @@ const FinishedGoods = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [editingId, setEditingId] = useState(null); // 🌟 Edit කරන ID එක රඳවා ගැනීමට
+  const [editingId, setEditingId] = useState(null); 
 
   const [form, setForm] = useState({
     itemCode: '',
@@ -26,10 +27,10 @@ const FinishedGoods = () => {
     try {
       setLoading(true);
       const [productsRes, uomsRes, sizesRes, colorsRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/finished-goods').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/uoms').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/sizes').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/colors').catch(() => ({ data: [] }))
+        axios.get('${API_URL}/finished-goods').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/uoms').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/sizes').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/colors').catch(() => ({ data: [] }))
       ]);
 
       const rawSizes = sizesRes.data;
@@ -93,7 +94,7 @@ const FinishedGoods = () => {
     setIsModalOpen(true);
   };
 
-  // 🌟 Open Modal for Editing Existing Item
+  //  Open Modal for Editing Existing Item
   const handleOpenEditModal = (p) => {
     setEditingId(p._id);
     setForm({
@@ -124,11 +125,11 @@ const FinishedGoods = () => {
       };
 
       if (editingId) {
-        // 🌟 Update (PUT) Request
-        await axios.put(`http://192.168.1.30:5003/api/finished-goods/${editingId}`, payload);
+        //  Update (PUT) Request
+        await axios.put(`${API_URL}/finished-goods/${editingId}`, payload);
       } else {
-        // 🌟 Create (POST) Request
-        await axios.post('http://192.168.1.30:5003/api/finished-goods/create', payload);
+        //  Create (POST) Request
+        await axios.post('${API_URL}/finished-goods/create', payload);
       }
       
       setForm({ itemCode: '', itemName: '', uom: '' });

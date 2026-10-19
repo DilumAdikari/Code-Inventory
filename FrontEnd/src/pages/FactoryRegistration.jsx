@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Factory, Plus, Loader2, CheckCircle2, AlertTriangle, User, Phone, Mail, MapPin } from 'lucide-react';
 import { factoryApi } from '../api/factoryApi';
+import { API_URL } from "../api/config";
 
 const FactoryRegistration = () => {
   const [factories, setFactories] = useState([]);

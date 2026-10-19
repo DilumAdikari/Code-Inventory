@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Warehouse, Layers, Palette, DollarSign, Loader2, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../api/config";
 
 const StockOverview = () => {
   const [stocks, setStocks] = useState([]);
@@ -16,8 +17,8 @@ const StockOverview = () => {
     try {
       setLoading(true);
       const [stockRes, whRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/stocks').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/warehouses').catch(() => ({ data: [] }))
+        axios.get('${API_URL}/stocks').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/warehouses').catch(() => ({ data: [] }))
       ]);
       setStocks(stockRes.data || []);
       setWarehouses(whRes.data || []);
@@ -30,13 +31,13 @@ const StockOverview = () => {
 
   useEffect(() => { fetchStockData(); }, []);
 
-  // Extract Unique Categories for the Filter Dropdown
+ 
   const categories = [...new Set(stocks.map(s => s.material?.category || s.category).filter(Boolean))];
 
-  // 🌟 ✅ DYNAMIC FILTERING & HIDING ZERO/NEGATIVE STOCKS
+  
   const filteredStocks = stocks.filter(stock => {
     const itemQty = stock.qty || 0;
-    if (itemQty <= 0) return false; // 0 හෝ ඊට අඩු තොග සැඟවීම
+    if (itemQty <= 0) return false; 
 
     const mat = stock.material || {};
     const matName = (mat.materialName || mat.itemName || mat.styleName || mat.name || stock.itemName || stock.materialName || '').toLowerCase();

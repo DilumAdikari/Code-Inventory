@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Loader2, ArrowLeft, Send, CheckCircle, AlertCircle, Package, Save, Printer } from 'lucide-react';
+import { API_URL } from "../api/config";
 
 const GoodsIssueWindow = () => {
   const { id } = useParams();
@@ -12,7 +13,7 @@ const GoodsIssueWindow = () => {
   const [stocks, setStocks] = useState([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [editableItems, setEditableItems] = useState([]);
-  const [cmCost, setCmCost] = useState(0); // 🌟 CM Cost State එක
+  const [cmCost, setCmCost] = useState(0); 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [approvaling, setApprovaling] = useState(false);
@@ -23,11 +24,11 @@ const GoodsIssueWindow = () => {
     const fetchData = async () => {
       try {
         const [issueRes, whRes, stockRes, costingRes, poRes] = await Promise.all([
-          axios.get('http://192.168.1.30:5003/api/material-issues'),
-          axios.get('http://192.168.1.30:5003/api/warehouses'),
-          axios.get('http://192.168.1.30:5003/api/stocks').catch(() => ({ data: [] })),
-          axios.get('http://192.168.1.30:5003/api/costing').catch(() => ({ data: [] })),
-          axios.get('http://192.168.1.30:5003/api/production-orders').catch(() => ({ data: [] }))
+          axios.get('${API_URL}/material-issues'),
+          axios.get('${API_URL}/warehouses'),
+          axios.get('${API_URL}/stocks').catch(() => ({ data: [] })),
+          axios.get('${API_URL}/costing').catch(() => ({ data: [] })),
+          axios.get('${API_URL}/production-orders').catch(() => ({ data: [] }))
         ]);
 
         const currentIssue = issueRes.data.find(i => i._id === id);
@@ -37,7 +38,7 @@ const GoodsIssueWindow = () => {
           setSelectedWarehouse(currentIssue.warehouse._id || currentIssue.warehouse);
         }
 
-        // 🌟 Production Order සහ Sales Order හරහා අදාළ Costing එකෙන් CM Cost එක ලබා ගැනීම
+        
         if (currentIssue) {
           let matchedCosting = null;
           const poId = currentIssue.productionOrder?._id || currentIssue.productionOrder;
@@ -47,7 +48,7 @@ const GoodsIssueWindow = () => {
           if (poId) {
             const currentPo = poRes.data.find(p => String(p._id) === String(poId));
             const poSoId = currentPo?.salesOrder?._id || currentPo?.salesOrder;
-            
+
             matchedCosting = costingRes.data.find(c => {
               const cPoId = c.productionOrder?._id || c.productionOrder;
               const cSoId = c.salesOrder?._id || c.salesOrder;
@@ -55,7 +56,7 @@ const GoodsIssueWindow = () => {
             });
           }
 
-          // 2. නැතහොත් Sales Order එක හරහා සෙවීම
+          
           if (!matchedCosting && soId) {
             matchedCosting = costingRes.data.find(c => {
               const cSoId = c.salesOrder?._id || c.salesOrder;
@@ -131,7 +132,7 @@ const GoodsIssueWindow = () => {
     try {
       setSubmitting(true);
       await axios.put(
-        `http://192.168.1.30:5003/api/material-issues/update-items/${id}`,
+        `${API_URL}/material-issues/update-items/${id}`,
         {
           warehouse: selectedWarehouse,
           items: editableItems.map(item => ({
@@ -176,7 +177,7 @@ const GoodsIssueWindow = () => {
     try {
       setApprovaling(true);
       await axios.put(
-        `http://192.168.1.30:5003/api/material-issues/update-items/${id}`,
+        `${API_URL}/material-issues/update-items/${id}`,
         {
           warehouse: selectedWarehouse,
           items: editableItems.map(item => ({
@@ -191,7 +192,7 @@ const GoodsIssueWindow = () => {
       );
 
       const res = await axios.post(
-        `http://192.168.1.30:5003/api/material-issues/submit-approval/${id}`,
+        `${API_URL}/material-issues/submit-approval/${id}`,
         { createdBy: currentUsername }
       );
 
@@ -228,7 +229,7 @@ const GoodsIssueWindow = () => {
     warehouses.find(w => w._id === (issueData.warehouse?._id || issueData.warehouse))?.warehouseName ||
     'Main Store';
 
-  // 🌟 Factory Master එකෙන් පැමිණි Plant / Factory නම ලබා ගැනීම
+   
   const plantName = issueData.plant?.name || issueData.plant?.factoryCode || 'N/A';
 
   return (

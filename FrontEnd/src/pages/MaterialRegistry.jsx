@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Plus, Search, Loader2, Package, X, Edit2 } from 'lucide-react';
+import { API_URL } from "../api/config";
 
-// ==========================================
-// 🌟 1. ADD / EDIT MATERIAL MODAL COMPONENT
-// ==========================================
+
 const AddMaterialModal = ({ isOpen, onClose, onMaterialAdded, editingMaterial }) => {
   const [uoms, setUoms] = useState([]);
   const [colors, setColors] = useState([]);
@@ -30,9 +29,9 @@ const AddMaterialModal = ({ isOpen, onClose, onMaterialAdded, editingMaterial })
       try {
         setLoadingSizes(true);
         const [uomRes, colorRes, sizeRes] = await Promise.all([
-          axios.get('http://192.168.1.30:5003/api/uoms').catch(() => ({ data: [] })),
-          axios.get('http://192.168.1.30:5003/api/colors').catch(() => ({ data: [] })),
-          axios.get('http://192.168.1.30:5003/api/sizes').catch(() => ({ data: [] }))
+          axios.get('${API_URL}/uoms').catch(() => ({ data: [] })),
+          axios.get('${API_URL}/colors').catch(() => ({ data: [] })),
+          axios.get('${API_URL}/sizes').catch(() => ({ data: [] }))
         ]);
         setUoms(uomRes.data || []);
         setColors(colorRes.data || []);
@@ -45,7 +44,7 @@ const AddMaterialModal = ({ isOpen, onClose, onMaterialAdded, editingMaterial })
     };
     loadMasters();
 
-    // 🌟 Edit කිරීමට දත්ත ලැබී ඇත්නම් ෆෝම් එකට ඒවා Pre-fill කිරීම
+   
     if (editingMaterial) {
       setItemCode(editingMaterial.itemCode || '');
       setMaterialName(editingMaterial.materialName || '');
@@ -106,9 +105,9 @@ const AddMaterialModal = ({ isOpen, onClose, onMaterialAdded, editingMaterial })
       const editId = editingMaterial?._id || editingMaterial?.id;
 
       if (editId) {
-        await axios.put(`http://192.168.1.30:5003/api/materials/${editId}`, payload);
+        await axios.put(`${API_URL}/materials/${editId}`, payload);
       } else {
-        await axios.post('http://192.168.1.30:5003/api/materials', payload);
+        await axios.post('${API_URL}/materials', payload);
       }
 
       setItemCode('');
@@ -250,9 +249,7 @@ const AddMaterialModal = ({ isOpen, onClose, onMaterialAdded, editingMaterial })
   );
 };
 
-// ==========================================
-// 🌟 2. MAIN MATERIAL REGISTRY COMPONENT FLOW
-// ==========================================
+
 const MaterialRegistry = () => {
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -262,7 +259,7 @@ const MaterialRegistry = () => {
 
   const fetchMaterials = async () => {
     try {
-      const response = await axios.get('http://192.168.1.30:5003/api/materials');
+      const response = await axios.get('${API_URL}/materials');
       setMaterials(response.data || []);
       setLoading(false);
     } catch (err) {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, FileText, X, Printer, ArrowLeft, Search, Send, CheckCircle, AlertCircle, Save } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../api/config";
 
 const InvoiceRegister = () => {
   const [invoiceList, setInvoiceList] = useState([]);
@@ -39,14 +40,14 @@ const InvoiceRegister = () => {
     try {
       setLoading(true);
       const [invRes, searchRes, whRes, colRes, custRes, wfRes, stockRes, uomRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/invoices').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/grn/all-items-search').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/warehouses').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/colors').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/customers').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/workflows').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/stocks').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/uoms').catch(() => ({ data: [] }))
+        axios.get('${API_URL}/invoices').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/grn/all-items-search').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/warehouses').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/colors').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/customers').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/workflows').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/stocks').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/uoms').catch(() => ({ data: [] }))
       ]);
 
       const parsedItems = Array.isArray(searchRes.data) ? searchRes.data : (searchRes.data?.data || []);
@@ -70,7 +71,7 @@ const InvoiceRegister = () => {
 
   useEffect(() => { loadInvoiceData(); }, []);
 
-  // 🌟 UOM එක නිවැරදිව abbreviation එකට පරිවර්තනය කරන හෙල්පර් ෆන්ක්ෂන් එක
+  
   const resolveUomString = (uomData, matchedItem) => {
     if (uomData) {
       if (typeof uomData === 'object' && uomData !== null) {
@@ -99,7 +100,7 @@ const InvoiceRegister = () => {
     return 'Pcs';
   };
 
-  // 🌟 ✅ ස්ටොක් සර්ච් කිරීමේ දෝෂය සම්පූර්ණයෙන්ම නිවැරදි කළ getAvailableStock ෆන්ක්ෂන් එක
+  
   const getAvailableStock = (materialId, colorId, sizeId, warehouseId) => {
     if (!materialId || !warehouseId) return 0;
     
@@ -180,7 +181,7 @@ const InvoiceRegister = () => {
       setInitLoading(true);
       const initialItems = [{ material: '', color: '', size: '', uom: 'Pcs', issuedQty: 0, unitPrice: 0, totalPrice: 0, storeLocation: form.globalWarehouse, searchQuery: '' }];
 
-      const res = await axios.post('http://192.168.1.30:5003/api/invoices/save', {
+      const res = await axios.post('${API_URL}/invoices/save', {
         invoiceDate: form.invoiceDate,
         customerName: form.customerName,
         globalWarehouse: form.globalWarehouse,
@@ -297,7 +298,7 @@ const InvoiceRegister = () => {
         storeLocation: item.storeLocation || form.globalWarehouse
       }));
 
-      await axios.post('http://192.168.1.30:5003/api/invoices/save', {
+      await axios.post('${API_URL}/invoices/save', {
         invoiceId,
         invoiceDate: form.invoiceDate,
         customerName: form.customerName,
@@ -380,7 +381,7 @@ const InvoiceRegister = () => {
       setApprovaling(true);
       await handleSaveDraft();
       const res = await axios.post(
-        `http://192.168.1.30:5003/api/invoices/submit-approval/${invoiceId}`,
+        `${API_URL}/invoices/submit-approval/${invoiceId}`,
         { createdBy: currentUsername }
       );
 

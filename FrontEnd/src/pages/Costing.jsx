@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, ArrowLeft, Check, FileSpreadsheet, X, Printer, Send } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../api/config";  
 
 // Letters, numbers, "-" and "/" only, max 20 characters
 const COSTING_NO_REGEX = /^[A-Z0-9\-\/]{1,20}$/;
@@ -47,12 +48,12 @@ const Costing = () => {
     try {
       setLoading(true);
       const [costingRes, soRes, wfRes, matRes, supRes, colRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/costing').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/sales-orders').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/workflows').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/materials').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/suppliers').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/colors').catch(() => ({ data: [] }))
+        axios.get('${API_URL}/costing').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/sales-orders').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/workflows').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/materials').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/suppliers').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/colors').catch(() => ({ data: [] }))
       ]);
 
       setCostingList(costingRes.data || []);
@@ -141,7 +142,7 @@ const Costing = () => {
         createdBy: currentUsername
       };
 
-      const response = await axios.post('http://192.168.1.30:5003/api/costing/save', initialPayload);
+      const response = await axios.post('${API_URL}/costing/save', initialPayload);
       if (response.data && response.data._id) {
         setCostingId(response.data._id);
         setActiveCostingNo(response.data.costingNo || normalizedNo);
@@ -255,7 +256,7 @@ const Costing = () => {
         createdBy: currentUsername
       };
 
-      const response = await axios.post('http://192.168.1.30:5003/api/costing/save', payload);
+      const response = await axios.post('${API_URL}/costing/save', payload);
 
       if (response.data && response.data.costingNo) {
         setActiveCostingNo(response.data.costingNo);

@@ -1,17 +1,18 @@
 import React from 'react';
-import { 
-  ShoppingBag, 
-  Calculator, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  CheckCircle, 
+import { API_URL } from "../api/config";
+import {
+  ShoppingBag,
+  Calculator,
+  ArrowUpRight,
+  ArrowDownRight,
+  CheckCircle,
   AlertTriangle,
   Package,
   TrendingUp
 } from 'lucide-react';
 
 const Dashboard = () => {
-  // 1. වඩාත් විස්තරාත්මක Cards 6ක් (Stats Cards)
+
   const stats = [
     {
       title: "Total Sales Orders",
@@ -73,13 +74,13 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-8">
-      {/* WELCOME BANNER (බටන් එක අයින් කර ඇත) */}
+
       <div className="flex flex-col">
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
         <p className="text-sm text-slate-500 mt-1">Welcome back! Here is what's happening with your system today.</p>
       </div>
 
-      {/* STATS CARDS GRID - දැන් columns 6ක් ලස්සනට grid එකකට වැටෙනවා */}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
         {stats.map((stat, index) => (
           <div key={index} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between hover:border-emerald-200 transition-colors duration-200">
@@ -107,7 +108,7 @@ const Dashboard = () => {
             Live Track
           </span>
         </div>
-        
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>

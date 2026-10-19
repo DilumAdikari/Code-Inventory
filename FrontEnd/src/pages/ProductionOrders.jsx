@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 // ✅ FIX 1 — Send added to imports
 import { Loader2, Search, Plus, X, ClipboardList, Layers, FileText, Info, CheckCircle2, ArrowLeft, ShoppingCart, Send } from 'lucide-react';
+import { API_URL } from "../api/config";
 
 const ProductionOrders = () => {
   const [orders, setOrders] = useState([]);
@@ -36,10 +37,10 @@ const ProductionOrders = () => {
   const fetchData = async () => {
     try {
       const [poRes, soRes, costingRes, wfRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/production-orders'),
-        axios.get('http://192.168.1.30:5003/api/sales-orders'),
-        axios.get('http://192.168.1.30:5003/api/costing'),
-        axios.get('http://192.168.1.30:5003/api/workflows')
+        axios.get('${API_URL}/production-orders'),
+        axios.get('${API_URL}/sales-orders'),
+        axios.get('${API_URL}/costing'),
+        axios.get('${API_URL}/workflows')
       ]);
       setOrders(poRes.data || []);
       setSalesOrders(soRes.data || []);
@@ -104,7 +105,7 @@ const ProductionOrders = () => {
         createdBy: currentUsername
       };
 
-      await axios.post('http://192.168.1.30:5003/api/production-orders/create', payload);
+      await axios.post('${API_URL}/production-orders/create', payload);
       setTargetDate('');
       setSelectedWorkflow('');
       setSelectedSalesOrder('');
@@ -121,12 +122,12 @@ const ProductionOrders = () => {
     }
   };
 
-  // ✅ kept for reference but no longer used in UI — approval flow replaced this
+ 
   const handleCompleteProductionOrder = async (poId) => {
     if (!window.confirm("Are you sure you want to finalize this Production Order?")) return;
     try {
       setStatusUpdatingId(poId);
-      await axios.put(`http://192.168.1.30:5003/api/production-orders/${poId}`, { status: 'Completed' });
+      await axios.put(`${API_URL}/production-orders/${poId}`, { status: 'Completed' });
       alert("Production Worksheet updated to Completed successfully!");
       if (selectedOrder && selectedOrder._id === poId) {
         setSelectedOrder(prev => ({ ...prev, status: 'Completed' }));
@@ -140,7 +141,7 @@ const ProductionOrders = () => {
     }
   };
 
-  // ✅ FIX 2 — currentUsername now defined above so this works correctly
+ 
   const handleSubmitForApproval = async () => {
     if (!window.confirm("Submit this Production Order for approval?")) return;
 
@@ -148,7 +149,7 @@ const ProductionOrders = () => {
       setStatusUpdatingId(selectedOrder._id);
 
       await axios.post(
-        `http://192.168.1.30:5003/api/production-orders/submit-approval/${selectedOrder._id}`,
+        `${API_URL}/production-orders/submit-approval/${selectedOrder._id}`,
         { createdBy: currentUsername }
       );
 
@@ -180,7 +181,7 @@ const ProductionOrders = () => {
       setBomLoadingId(poId);
       const costingId = orderObj.costing?._id || orderObj.costing;
 
-      const res = await axios.get(`http://192.168.1.30:5003/api/production-orders/costing-details/${costingId}`);
+      const res = await axios.get(`${API_URL}/production-orders/costing-details/${costingId}`);
       const costingData = res.data;
       const costingItems = costingData.items || costingData.materials || [];
 
@@ -208,7 +209,7 @@ const ProductionOrders = () => {
         const wastage = Number(cItem.wastagePercentage !== undefined ? cItem.wastagePercentage : 0);
         const totalRequired = totalGarmentQty * consumption * (1 + (wastage / 100));
 
-        const stockRes = await axios.get('http://192.168.1.30:5003/api/stocks').catch(() => ({ data: [] }));
+        const stockRes = await axios.get('${API_URL}/stocks').catch(() => ({ data: [] }));
         const currentStockObj = stockRes.data.find(s => {
           const sMatId = s.material && typeof s.material === 'object' ? s.material._id : s.material;
           const sColId = s.color && typeof s.color === 'object' ? s.color._id : s.color;
@@ -233,7 +234,7 @@ const ProductionOrders = () => {
         };
       }));
 
-      await axios.put(`http://192.168.1.30:5003/api/production-orders/save-bom/${poId}`, { bomItems: calculatedShortageBOM });
+      await axios.put(`${API_URL}/production-orders/save-bom/${poId}`, { bomItems: calculatedShortageBOM });
 
       setActiveBOMData(prev => ({ ...prev, [poId]: calculatedShortageBOM }));
       setSelectedOrder(prev => ({ ...prev, bomItems: calculatedShortageBOM }));
@@ -277,7 +278,7 @@ const ProductionOrders = () => {
         remarks: `Auto-generated from Production Order: ${selectedOrder.productionOrderNo}`
       };
 
-      await axios.post('http://192.168.1.30:5003/api/purchases/create', payload);
+      await axios.post('${API_URL}/purchases/create', payload);
       setSelectedOrder(prev => ({ ...prev, poGenerated: true }));
       alert("Purchase Order generated successfully!");
     } catch (err) {
@@ -346,7 +347,7 @@ const ProductionOrders = () => {
   const currentBOMForCheck = selectedOrder ? (activeBOMData[selectedOrder._id] || selectedOrder.bomItems || []) : [];
   const hasShortages = currentBOMForCheck.some(b => Number(b.shortageQty || 0) > 0);
 
-  // ✅ status badge style helper
+ 
   const getStatusStyle = (status) => {
     if (status === 'Completed') return 'bg-emerald-50 text-emerald-800 border-emerald-200';
     if (status === 'Pending Approval') return 'bg-amber-50 text-amber-800 border-amber-200';
@@ -410,7 +411,7 @@ const ProductionOrders = () => {
                         <td className="p-4 text-sm text-slate-500">{new Date(order.targetDate).toISOString().split('T')[0]}</td>
                         <td className="p-4 text-base text-emerald-900">{order.workflow?.name || order.workflow?.code || 'Standard Line'}</td>
                         <td className="p-4">
-                          {/* ✅ status badge now shows all statuses correctly */}
+                          
                           <span className={`px-3 py-1 border rounded text-xs font-normal ${getStatusStyle(order.status)}`}>
                             {order.status || 'Draft'}
                           </span>
@@ -429,7 +430,7 @@ const ProductionOrders = () => {
         </>
       )}
 
-      {/* VIEW 2: WORKSTATION DETAIL */}
+      
       {!isListView && selectedOrder && (
         <div className="space-y-6 animate-in fade-in duration-200">
 
@@ -525,7 +526,7 @@ const ProductionOrders = () => {
                   </table>
                 </div>
 
-                {/* ✅ PLAN ACTION BAR — correct 3-state flow */}
+                
                 <div className="flex justify-end gap-3 pt-3">
 
                   {/* Draft → Submit for Approval */}
@@ -543,14 +544,14 @@ const ProductionOrders = () => {
                     </button>
                   )}
 
-                  {/* Pending Approval — locked */}
+                  
                   {selectedOrder.status === 'Pending Approval' && (
                     <span className="text-xs text-amber-600 font-semibold italic p-2">
                       ⏳ Awaiting approval from assigned workflow approver. Sheet is locked.
                     </span>
                   )}
 
-                  {/* Completed — Create BOM */}
+                  
                   {selectedOrder.status === 'Completed' && !hasBOMAlreadyCreated && (
                     <button
                       onClick={() => handleTriggerBOMCalculation(selectedOrder)}
@@ -565,7 +566,7 @@ const ProductionOrders = () => {
                     </button>
                   )}
 
-                  {/* BOM already created message */}
+                  
                   {selectedOrder.status === 'Completed' && hasBOMAlreadyCreated && (
                     <span className="text-xs text-emerald-700 font-semibold italic p-2">
                       ✅ BOM has been created. View in BOM tab.
@@ -576,7 +577,7 @@ const ProductionOrders = () => {
               </div>
             )}
 
-            {/* BOM TAB */}
+            
             {activeSubTab === 'bom' && activeBOMData[selectedOrder._id] && (
               <div className="space-y-4 animate-in fade-in duration-150">
                 <div className="flex justify-between items-center">
@@ -640,7 +641,7 @@ const ProductionOrders = () => {
         </div>
       )}
 
-      {/* CREATION MODAL */}
+      
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
           <div className="bg-white w-full max-w-xl rounded-xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">

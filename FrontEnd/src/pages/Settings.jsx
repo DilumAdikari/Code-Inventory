@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Palette, Plus, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { colorApi } from '../api/colorApi';
+import { API_URL } from "../api/config";
 
 const Settings = () => {
   // Tab Management
@@ -14,7 +15,7 @@ const Settings = () => {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  // 1. Database එකේ තියෙන පාටවල් ලැයිස්තුව Live Fetch කිරීම
+  
   const fetchColors = async () => {
     try {
       setLoading(true);
@@ -31,7 +32,7 @@ const Settings = () => {
     fetchColors();
   }, []);
 
-  // 2. අලුත් පාටක් DB එකට Save කිරීම
+
   const handleAddColor = async (e) => {
     e.preventDefault();
     if (!colorName.trim()) return;
@@ -43,7 +44,7 @@ const Settings = () => {
       await colorApi.createColor({ name: colorName.trim(), code: colorCode });
       setMessage({ type: 'success', text: 'Color registered successfully!' });
       setColorName('');
-      fetchColors(); // Table එක auto refresh කරනවා
+      fetchColors(); 
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to add color. Code/Name must be unique.' });
     } finally {
