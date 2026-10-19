@@ -1,8 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-// ✅ FIX 1 — Send added to imports
-import { Loader2, Search, Plus, X, ClipboardList, Layers, FileText, Info, CheckCircle2, ArrowLeft, ShoppingCart, Send } from 'lucide-react';
-import { API_URL } from "../api/config";
+import {
+  Loader2,
+  Search,
+  Plus,
+  X,
+  ClipboardList,
+  Layers,
+  FileText,
+  Info,
+  ArrowLeft,
+  ShoppingCart,
+  Send
+} from 'lucide-react';
+import { API_URL } from '../api/config';
+
+// Returns the value as an array, or an empty array if it is not one
+const toArray = (value) => (Array.isArray(value) ? value : []);
+
+// Formats a date as YYYY-MM-DD, or '-' if the value is missing or invalid
+const formatDate = (value) => {
+  const date = new Date(value);
+  return isNaN(date) ? '-' : date.toISOString().split('T')[0];
+};
 
 const ProductionOrders = () => {
   const [orders, setOrders] = useState([]);
@@ -31,30 +51,31 @@ const ProductionOrders = () => {
   const [remarks, setRemarks] = useState('');
   const [loadedGarmentQuantities, setLoadedGarmentQuantities] = useState([]);
 
-  // ✅ FIX 2 — currentUsername declared
   const currentUsername = localStorage.getItem('username') || 'ADMIN';
 
+  // Loads every list this page needs from the server
   const fetchData = async () => {
     try {
       const [poRes, soRes, costingRes, wfRes] = await Promise.all([
-        axios.get('${API_URL}/production-orders'),
-        axios.get('${API_URL}/sales-orders'),
-        axios.get('${API_URL}/costing'),
-        axios.get('${API_URL}/workflows')
+        axios.get(`${API_URL}/production-orders`),
+        axios.get(`${API_URL}/sales-orders`),
+        axios.get(`${API_URL}/costing`),
+        axios.get(`${API_URL}/workflows`)
       ]);
-      setOrders(poRes.data || []);
-      setSalesOrders(soRes.data || []);
-      setCostings(costingRes.data || []);
-      setWorkflows(wfRes.data || []);
+      setOrders(toArray(poRes.data));
+      setSalesOrders(toArray(soRes.data));
+      setCostings(toArray(costingRes.data));
+      setWorkflows(toArray(wfRes.data));
       setLoading(false);
     } catch (err) {
-      console.error("❌ Error loading tracking registry:", err);
+      console.error('Error loading production registry:', err);
       setLoading(false);
     }
   };
 
   useEffect(() => { fetchData(); }, []);
 
+  // Builds the garment size/quantity list from the selected sales order
   const handleSalesOrderChange = async (soId) => {
     setSelectedSalesOrder(soId);
     if (!soId) {
@@ -87,6 +108,7 @@ const ProductionOrders = () => {
     }
   };
 
+  // Creates a new production order from the modal form
   const handleInitialPOSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -105,7 +127,7 @@ const ProductionOrders = () => {
         createdBy: currentUsername
       };
 
-      await axios.post('${API_URL}/production-orders/create', payload);
+      await axios.post(`${API_URL}/production-orders/create`, payload);
       setTargetDate('');
       setSelectedWorkflow('');
       setSelectedSalesOrder('');
@@ -116,34 +138,15 @@ const ProductionOrders = () => {
       fetchData();
     } catch (err) {
       console.error(err);
-      alert("Failed to register production run sheet.");
+      alert('Failed to register production run sheet.');
     } finally {
       setSubmitting(false);
     }
   };
 
- 
-  const handleCompleteProductionOrder = async (poId) => {
-    if (!window.confirm("Are you sure you want to finalize this Production Order?")) return;
-    try {
-      setStatusUpdatingId(poId);
-      await axios.put(`${API_URL}/production-orders/${poId}`, { status: 'Completed' });
-      alert("Production Worksheet updated to Completed successfully!");
-      if (selectedOrder && selectedOrder._id === poId) {
-        setSelectedOrder(prev => ({ ...prev, status: 'Completed' }));
-      }
-      fetchData();
-    } catch (err) {
-      console.error("❌ Status update failed:", err);
-      alert("Failed to update status.");
-    } finally {
-      setStatusUpdatingId(null);
-    }
-  };
-
- 
+  // Sends the production order for approval
   const handleSubmitForApproval = async () => {
-    if (!window.confirm("Submit this Production Order for approval?")) return;
+    if (!window.confirm('Submit this Production Order for approval?')) return;
 
     try {
       setStatusUpdatingId(selectedOrder._id);
@@ -153,27 +156,28 @@ const ProductionOrders = () => {
         { createdBy: currentUsername }
       );
 
-      alert("Production Order submitted for approval! The assigned approver will be notified.");
+      alert('Production Order submitted for approval! The assigned approver will be notified.');
       setSelectedOrder(prev => ({ ...prev, status: 'Pending Approval' }));
       fetchData();
     } catch (err) {
-      console.error("❌ Submit approval failed:", err);
-      alert(err.response?.data?.message || "Failed to submit for approval.");
+      console.error('Submit approval failed:', err);
+      alert(err.response?.data?.message || 'Failed to submit for approval.');
     } finally {
       setStatusUpdatingId(null);
     }
   };
 
+  // Calculates the BOM and shortages for a completed production order
   const handleTriggerBOMCalculation = async (orderObj) => {
     const poId = orderObj._id;
 
     if (orderObj.status !== 'Completed') {
-      alert("BOM Generation Locked: Production Order must be Completed (approved) before generating BOM.");
+      alert('BOM Generation Locked: Production Order must be Completed (approved) before generating BOM.');
       return;
     }
 
     if (!orderObj.costing?._id && !orderObj.costing) {
-      alert("No valid associated approved product costing profile found.");
+      alert('No valid associated approved product costing profile found.');
       return;
     }
 
@@ -209,8 +213,8 @@ const ProductionOrders = () => {
         const wastage = Number(cItem.wastagePercentage !== undefined ? cItem.wastagePercentage : 0);
         const totalRequired = totalGarmentQty * consumption * (1 + (wastage / 100));
 
-        const stockRes = await axios.get('${API_URL}/stocks').catch(() => ({ data: [] }));
-        const currentStockObj = stockRes.data.find(s => {
+        const stockRes = await axios.get(`${API_URL}/stocks`).catch(() => ({ data: [] }));
+        const currentStockObj = toArray(stockRes.data).find(s => {
           const sMatId = s.material && typeof s.material === 'object' ? s.material._id : s.material;
           const sColId = s.color && typeof s.color === 'object' ? s.color._id : s.color;
           return String(sMatId) === String(materialId) && String(sColId) === String(colorId);
@@ -242,12 +246,13 @@ const ProductionOrders = () => {
       fetchData();
     } catch (err) {
       console.error(err);
-      alert("BOM Calculation matrix allocation failed.");
+      alert('BOM Calculation matrix allocation failed.');
     } finally {
       setBomLoadingId(null);
     }
   };
 
+  // Creates a purchase order for all materials that are short
   const handleGeneratePurchaseOrderForShortage = async () => {
     if (poGenerating) return;
 
@@ -255,7 +260,7 @@ const ProductionOrders = () => {
     const shortageItems = currentBOM.filter(b => Number(b.shortageQty || 0) > 0);
 
     if (shortageItems.length === 0) {
-      alert("No material shortages detected to generate a Purchase Order.");
+      alert('No material shortages detected to generate a Purchase Order.');
       return;
     }
 
@@ -278,16 +283,18 @@ const ProductionOrders = () => {
         remarks: `Auto-generated from Production Order: ${selectedOrder.productionOrderNo}`
       };
 
-      await axios.post('${API_URL}/purchases/create', payload);
+      await axios.post(`${API_URL}/purchases/create`, payload);
       setSelectedOrder(prev => ({ ...prev, poGenerated: true }));
-      alert("Purchase Order generated successfully!");
+      alert('Purchase Order generated successfully!');
     } catch (err) {
-      console.error("❌ Failed to generate purchase order:", err);
-      alert("Failed to generate Purchase Order.");
+      console.error('Failed to generate purchase order:', err);
+      alert('Failed to generate Purchase Order.');
+    } finally {
       setPoGenerating(false);
     }
   };
 
+  // Opens the order detail sheet and maps any saved BOM rows
   const handleOpenOrderSheet = (order) => {
     setSelectedOrder(order);
     setActiveSubTab('plan');
@@ -309,6 +316,7 @@ const ProductionOrders = () => {
     }
   };
 
+  // Returns to the list view and reloads the data
   const handleCloseOrderSheet = () => {
     setSelectedOrder(null);
     setIsListView(true);
@@ -323,13 +331,14 @@ const ProductionOrders = () => {
   if (loading) {
     return (
       <div className="p-12 text-base flex items-center justify-center gap-2 text-slate-500 font-sans tracking-wide">
-        <Loader2 className="animate-spin text-emerald-800" size={20} /> Syncing production worksheet indices...
+        <Loader2 className="animate-spin text-emerald-800" size={20} /> Loading production orders...
       </div>
     );
   }
 
   const hasBOMAlreadyCreated = (selectedOrder?.bomItems && selectedOrder.bomItems.length > 0);
 
+  // Garment size/quantity rows for the selected order
   const resolvedGarmentsList = selectedOrder
     ? ((selectedOrder.garmentQuantities && selectedOrder.garmentQuantities.length > 0)
         ? selectedOrder.garmentQuantities
@@ -347,7 +356,7 @@ const ProductionOrders = () => {
   const currentBOMForCheck = selectedOrder ? (activeBOMData[selectedOrder._id] || selectedOrder.bomItems || []) : [];
   const hasShortages = currentBOMForCheck.some(b => Number(b.shortageQty || 0) > 0);
 
- 
+  // Returns the badge classes for a production order status
   const getStatusStyle = (status) => {
     if (status === 'Completed') return 'bg-emerald-50 text-emerald-800 border-emerald-200';
     if (status === 'Pending Approval') return 'bg-amber-50 text-amber-800 border-amber-200';
@@ -378,7 +387,9 @@ const ProductionOrders = () => {
             <div className="relative w-full max-w-sm">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400"><Search size={18} /></span>
               <input
-                type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search routing PO# worksheets..."
                 className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-normal focus:outline-none focus:border-slate-400 transition-all"
               />
@@ -408,10 +419,9 @@ const ProductionOrders = () => {
                       >
                         <td className="p-4 px-6 text-base text-slate-900 font-mono font-bold">{displayPoNo}</td>
                         <td className="p-4 text-base text-slate-800">{order.salesOrder?.orderRef || 'N/A'}</td>
-                        <td className="p-4 text-sm text-slate-500">{new Date(order.targetDate).toISOString().split('T')[0]}</td>
+                        <td className="p-4 text-sm text-slate-500">{formatDate(order.targetDate)}</td>
                         <td className="p-4 text-base text-emerald-900">{order.workflow?.name || order.workflow?.code || 'Standard Line'}</td>
                         <td className="p-4">
-                          
                           <span className={`px-3 py-1 border rounded text-xs font-normal ${getStatusStyle(order.status)}`}>
                             {order.status || 'Draft'}
                           </span>
@@ -430,7 +440,7 @@ const ProductionOrders = () => {
         </>
       )}
 
-      
+      {/* VIEW 2: ORDER DETAIL SHEET */}
       {!isListView && selectedOrder && (
         <div className="space-y-6 animate-in fade-in duration-200">
 
@@ -466,12 +476,12 @@ const ProductionOrders = () => {
                     handleTriggerBOMCalculation(selectedOrder);
                   }
                 } else {
-                  alert("BOM Locked: Production Order must be approved and Completed before generating BOM.");
+                  alert('BOM Locked: Production Order must be approved and Completed before generating BOM.');
                 }
               }}
               className={`pb-3 text-base font-normal uppercase tracking-wider flex items-center gap-1.5 bg-transparent border-none focus:outline-none transition-all cursor-pointer ${selectedOrder.status !== 'Completed' && !hasBOMAlreadyCreated ? 'opacity-40 cursor-not-allowed text-slate-400' : activeSubTab === 'bom' ? 'text-slate-900 border-b-2 border-solid border-slate-900' : 'text-slate-400'}`}
             >
-              {bomLoadingId === selectedOrder._id ? <Loader2 className="animate-spin text-slate-400" size={14} /> : "BOM"} <Info size={14} className="text-slate-400" />
+              {bomLoadingId === selectedOrder._id ? <Loader2 className="animate-spin text-slate-400" size={14} /> : 'BOM'} <Info size={14} className="text-slate-400" />
             </button>
           </div>
 
@@ -510,7 +520,7 @@ const ProductionOrders = () => {
                           <td className="p-3.5 text-right text-base">{Number(g.orderQty || 0).toLocaleString()}</td>
                           <td className="p-3.5 text-right text-slate-300 text-base">-</td>
                           <td className="p-3.5 text-center text-sm text-emerald-800">
-                            {hasBOMAlreadyCreated ? "BOM CREATED" : "PENDING"}
+                            {hasBOMAlreadyCreated ? 'BOM CREATED' : 'PENDING'}
                           </td>
                         </tr>
                       ))}
@@ -526,10 +536,9 @@ const ProductionOrders = () => {
                   </table>
                 </div>
 
-                
                 <div className="flex justify-end gap-3 pt-3">
 
-                  {/* Draft → Submit for Approval */}
+                  {/* Draft -> Submit for Approval */}
                   {selectedOrder.status === 'Draft' && (
                     <button
                       onClick={handleSubmitForApproval}
@@ -544,14 +553,14 @@ const ProductionOrders = () => {
                     </button>
                   )}
 
-                  
+                  {/* Pending Approval -> locked */}
                   {selectedOrder.status === 'Pending Approval' && (
                     <span className="text-xs text-amber-600 font-semibold italic p-2">
-                      ⏳ Awaiting approval from assigned workflow approver. Sheet is locked.
+                      Awaiting approval from assigned workflow approver. Sheet is locked.
                     </span>
                   )}
 
-                  
+                  {/* Completed without BOM -> Create BOM */}
                   {selectedOrder.status === 'Completed' && !hasBOMAlreadyCreated && (
                     <button
                       onClick={() => handleTriggerBOMCalculation(selectedOrder)}
@@ -561,15 +570,15 @@ const ProductionOrders = () => {
                     >
                       {bomLoadingId === selectedOrder._id
                         ? <Loader2 className="animate-spin" size={16} />
-                        : "Create BOM"
+                        : 'Create BOM'
                       }
                     </button>
                   )}
 
-                  
+                  {/* Completed with BOM -> info */}
                   {selectedOrder.status === 'Completed' && hasBOMAlreadyCreated && (
                     <span className="text-xs text-emerald-700 font-semibold italic p-2">
-                      ✅ BOM has been created. View in BOM tab.
+                      BOM has been created. View in BOM tab.
                     </span>
                   )}
 
@@ -577,7 +586,7 @@ const ProductionOrders = () => {
               </div>
             )}
 
-            
+            {/* BOM TAB */}
             {activeSubTab === 'bom' && activeBOMData[selectedOrder._id] && (
               <div className="space-y-4 animate-in fade-in duration-150">
                 <div className="flex justify-between items-center">
@@ -641,7 +650,7 @@ const ProductionOrders = () => {
         </div>
       )}
 
-      
+      {/* CREATE PRODUCTION ORDER MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
           <div className="bg-white w-full max-w-xl rounded-xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
@@ -707,7 +716,7 @@ const ProductionOrders = () => {
               <div className="flex gap-3 pt-3 border-t border-slate-100">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-normal border-none cursor-pointer text-sm transition-colors">Cancel</button>
                 <button type="submit" disabled={submitting} className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-normal flex items-center justify-center border-none cursor-pointer text-sm transition-colors disabled:opacity-60">
-                  {submitting ? <Loader2 className="animate-spin" size={16} /> : "Save Production Run"}
+                  {submitting ? <Loader2 className="animate-spin" size={16} /> : 'Save Production Run'}
                 </button>
               </div>
             </form>

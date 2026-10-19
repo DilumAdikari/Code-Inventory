@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Loader2, ArrowLeft, FileSpreadsheet, X, Printer, Send } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Loader2, ArrowLeft, FileSpreadsheet, X, Printer, Send, ChevronDown, Search } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from '../api/config';
 
@@ -8,6 +8,99 @@ const COSTING_NO_REGEX = /^[A-Z0-9\-\/]{1,20}$/;
 
 // Returns the value as an array, or an empty array if it is not one
 const toArray = (value) => (Array.isArray(value) ? value : []);
+
+// Dropdown with a built-in search box. Filters options by their label as the user types.
+const SearchableSelect = ({
+  options = [],
+  value,
+  onChange,
+  placeholder = 'Select...',
+  searchPlaceholder = 'Type to search...',
+  emptyText = 'No results found',
+  disabled = false
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef(null);
+
+  const selectedOption = options.find(opt => String(opt.value) === String(value));
+
+  // Close the dropdown when the user clicks outside it
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredOptions = options.filter(opt =>
+    opt.label.toLowerCase().includes(query.trim().toLowerCase())
+  );
+
+  const handleSelect = (opt) => {
+    onChange(opt.value);
+    setIsOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setIsOpen(prev => !prev)}
+        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm text-left flex items-center justify-between focus:outline-none disabled:opacity-50"
+      >
+        <span className={selectedOption ? 'truncate' : 'text-slate-400 truncate'}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown size={16} className="text-slate-400 shrink-0 ml-2" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-[60] mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg">
+          <div className="p-2 border-b border-slate-100 flex items-center gap-2">
+            <Search size={14} className="text-slate-400 shrink-0" />
+            <input
+              autoFocus
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="w-full text-sm bg-transparent focus:outline-none"
+            />
+          </div>
+
+          <ul className="max-h-60 overflow-y-auto py-1">
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map(opt => (
+                <li key={opt.value}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(opt)}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 ${
+                      String(opt.value) === String(value)
+                        ? 'bg-emerald-50 text-emerald-900 font-semibold'
+                        : 'text-slate-700'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                </li>
+              ))
+            ) : (
+              <li className="px-3 py-2 text-sm text-slate-400 italic">{emptyText}</li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Costing = () => {
   const [costingList, setCostingList] = useState([]);
@@ -35,12 +128,15 @@ const Costing = () => {
   const [items, setItems] = useState([]);
   const [cmCost, setCmCost] = useState(0);
   const [overheadCost, setOverheadCost] = useState(0);
+  const [fabricCharges, setFabricCharges] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [initiationLoading, setInitiationLoading] = useState(false);
 
   const [dbMaterials, setDbMaterials] = useState([]);
   const [dbSuppliers, setDbSuppliers] = useState([]);
-  const [colors, setColors] = useState([]);
+
+  // Color master is not used for costing, so its state and API call are disabled
+  // const [colors, setColors] = useState([]);
 
   // Stored separately so the print view always has the costing number
   const [activeCostingNo, setActiveCostingNo] = useState('');
@@ -51,13 +147,13 @@ const Costing = () => {
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [costingRes, salesOrderRes, workflowRes, materialRes, supplierRes, colorRes] = await Promise.all([
+      const [costingRes, salesOrderRes, workflowRes, materialRes, supplierRes] = await Promise.all([
         axios.get(`${API_URL}/costing`).catch(() => ({ data: [] })),
         axios.get(`${API_URL}/sales-orders`).catch(() => ({ data: [] })),
         axios.get(`${API_URL}/workflows`).catch(() => ({ data: [] })),
         axios.get(`${API_URL}/materials`).catch(() => ({ data: [] })),
-        axios.get(`${API_URL}/suppliers`).catch(() => ({ data: [] })),
-        axios.get(`${API_URL}/colors`).catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/suppliers`).catch(() => ({ data: [] }))
+        // axios.get(`${API_URL}/colors`).catch(() => ({ data: [] }))  // Color master disabled
       ]);
 
       setCostingList(toArray(costingRes.data));
@@ -65,7 +161,7 @@ const Costing = () => {
       setWorkflows(toArray(workflowRes.data));
       setDbMaterials(toArray(materialRes.data));
       setDbSuppliers(toArray(supplierRes.data));
-      setColors(toArray(colorRes.data));
+      // setColors(toArray(colorRes.data));  // Color master disabled
       setLoading(false);
     } catch (err) {
       console.error(err);
@@ -91,17 +187,18 @@ const Costing = () => {
       setItems(costing.items.map(item => ({
         ...item,
         material: item.material?._id || item.material,
-        color: item.color?._id || item.color || '',
+        // color: item.color?._id || item.color || '',  // Color master disabled
         supplier: item.supplier?._id || item.supplier || '',
         unitCost: Number(item.unitCost !== undefined ? item.unitCost : item.unitPrice || 0)
       })));
     } else {
       const defaultSupplierId = dbSuppliers[0]?._id || '';
-      setItems([{ material: '', color: '', supplier: defaultSupplierId, uom: 'Pcs', consumption: 0, wastagePercentage: 0, unitCost: 0, totalCost: 0, totalWithWastage: 0 }]);
+      setItems([{ material: '', supplier: defaultSupplierId, uom: 'Pcs', consumption: 0, wastagePercentage: 0, unitCost: 0, totalCost: 0, totalWithWastage: 0 }]);
     }
 
     setCmCost(costing.cmCost || 0);
     setOverheadCost(costing.overheadCost || 0);
+    setFabricCharges(costing.fabricCharges || 0);
 
     if (costing.status === 'Completed') {
       setIsListView(false);
@@ -132,7 +229,7 @@ const Costing = () => {
       setInitiationLoading(true);
       const defaultSupplierId = dbSuppliers[0]?._id || '';
 
-      const initialItems = [{ material: '', color: '', supplier: defaultSupplierId, uom: 'Pcs', consumption: 0, wastagePercentage: 0, unitCost: 0, totalCost: 0, totalWithWastage: 0 }];
+      const initialItems = [{ material: '', supplier: defaultSupplierId, uom: 'Pcs', consumption: 0, wastagePercentage: 0, unitCost: 0, totalCost: 0, totalWithWastage: 0 }];
 
       const initialPayload = {
         costingNo: normalizedNo,
@@ -143,6 +240,7 @@ const Costing = () => {
         totalMaterialCost: 0,
         cmCost: 0,
         overheadCost: 0,
+        fabricCharges: 0,
         grandTotal: 0,
         status: 'Draft',
         createdBy: currentUsername
@@ -163,6 +261,7 @@ const Costing = () => {
       setItems(initialItems);
       setCmCost(0);
       setOverheadCost(0);
+      setFabricCharges(0);
       loadInitialData();
     } catch (err) {
       console.error(err);
@@ -204,22 +303,23 @@ const Costing = () => {
   };
 
   // Returns only the colors that are linked to the selected material
-  const getFilteredColorsForMaterial = (materialId) => {
-    if (!materialId) return [];
-    const selectedMaterial = dbMaterials.find(m => m._id === materialId);
-    if (selectedMaterial && selectedMaterial.colors && selectedMaterial.colors.length > 0) {
-      return colors.filter(c => selectedMaterial.colors.some(materialColor => {
-        const materialColorId = materialColor._id || materialColor;
-        return String(materialColorId) === String(c._id);
-      }));
-    }
-    return [];
-  };
+  // Color master disabled: not used for costing
+  // const getFilteredColorsForMaterial = (materialId) => {
+  //   if (!materialId) return [];
+  //   const selectedMaterial = dbMaterials.find(m => m._id === materialId);
+  //   if (selectedMaterial && selectedMaterial.colors && selectedMaterial.colors.length > 0) {
+  //     return colors.filter(c => selectedMaterial.colors.some(materialColor => {
+  //       const materialColorId = materialColor._id || materialColor;
+  //       return String(materialColorId) === String(c._id);
+  //     }));
+  //   }
+  //   return [];
+  // };
 
   // Adds an empty material row to the grid
   const handleAddRow = () => {
     const defaultSupplierId = dbSuppliers[0]?._id || '';
-    setItems([...items, { material: '', color: '', supplier: defaultSupplierId, uom: 'Pcs', consumption: 0, wastagePercentage: 0, unitCost: 0, totalCost: 0, totalWithWastage: 0 }]);
+    setItems([...items, { material: '', supplier: defaultSupplierId, uom: 'Pcs', consumption: 0, wastagePercentage: 0, unitCost: 0, totalCost: 0, totalWithWastage: 0 }]);
   };
 
   // Removes a material row, keeping at least one row
@@ -230,7 +330,11 @@ const Costing = () => {
   };
 
   const totalMaterialCost = items.reduce((sum, item) => sum + (item.totalWithWastage || 0), 0);
-  const grandTotal = totalMaterialCost + Number(cmCost || 0) + Number(overheadCost || 0);
+  const grandTotal =
+    totalMaterialCost +
+    Number(cmCost || 0) +
+    Number(overheadCost || 0) +
+    Number(fabricCharges || 0);
 
   // Saves the costing with the given status; auto-draft saves do not show alerts
   const executeSaveOperation = async (finalStatus, isAutoDraft = false) => {
@@ -243,7 +347,7 @@ const Costing = () => {
         .filter(item => item.material && String(item.material).trim() !== '')
         .map(item => ({
           material: item.material,
-          color: item.color && String(item.color).trim() !== '' ? item.color : null,
+          color: null, // Color master not used for costing
           supplier: item.supplier && String(item.supplier).trim() !== '' ? item.supplier : defaultSupplierId,
           uom: String(item.uom || 'Pcs'),
           consumption: Number(item.consumption || 0),
@@ -263,6 +367,7 @@ const Costing = () => {
         totalMaterialCost: Number(totalMaterialCost),
         cmCost: Number(cmCost || 0),
         overheadCost: Number(overheadCost || 0),
+        fabricCharges: Number(fabricCharges || 0),
         grandTotal: Number(grandTotal),
         status: finalStatus,
         createdBy: currentUsername
@@ -435,15 +540,17 @@ const Costing = () => {
 
               <div className="space-y-1">
                 <label className="block text-[11px] text-slate-400 font-medium uppercase">Select Live Sales Order *</label>
-                <select
-                  required
+                <SearchableSelect
+                  options={salesOrders.map(so => ({
+                    value: so._id,
+                    label: `${so.orderRef} - ${so.buyerName}`
+                  }))}
                   value={initialForm.salesOrder}
-                  onChange={(e) => setInitialForm({ ...initialForm, salesOrder: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm focus:outline-none"
-                >
-                  <option value="">Choose Live Contract Route</option>
-                  {salesOrders.map(so => <option key={so._id} value={so._id}>{so.orderRef} - {so.buyerName}</option>)}
-                </select>
+                  onChange={(id) => setInitialForm({ ...initialForm, salesOrder: id })}
+                  placeholder="Choose Live Contract Route"
+                  searchPlaceholder="Search by order ref or buyer..."
+                  emptyText="No sales orders match your search"
+                />
               </div>
 
               <div className="space-y-1">
@@ -484,14 +591,16 @@ const Costing = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-sm">
+          <div className="bg-white rounded-xl border border-slate-100 overflow-visible shadow-sm">
             <fieldset disabled={activeStatus === 'Completed' || activeStatus === 'Pending Approval'} className="w-full">
               <table className="w-full text-left text-sm border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-100 text-[11px] text-slate-400 font-semibold uppercase">
                   <tr>
                     <th className="py-3 px-4 w-5 text-center">#</th>
-                    <th className="py-3 px-4 w-1/4">Material Descriptor Code / Name</th>
+                    <th className="py-3 px-4 w-1/2">Material Descriptor Code / Name</th>
+                    {/* Color Master column disabled: not used for costing
                     <th className="py-3 px-4 w-1/4">Color Master *</th>
+                    */}
                     <th className="py-3 px-4 w-20 text-center">UOM</th>
                     <th className="py-3 px-4 w-24 text-right">Yield (CNSM)</th>
                     <th className="py-3 px-4 w-20 text-right">Wastage W%</th>
@@ -503,21 +612,27 @@ const Costing = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                   {items.map((row, index) => {
-                    const filteredColors = getFilteredColorsForMaterial(row.material);
                     const uomDisplay = row.uom && typeof row.uom === 'object' ? (row.uom.abbreviation || row.uom.name || 'Pcs') : String(row.uom || 'Pcs');
                     return (
                       <tr key={index}>
                         <td className="py-2.5 px-4 text-center text-slate-400 text-xs">{index + 1}</td>
+
+                        {/* Material searchable dropdown */}
                         <td className="py-2.5 px-4">
-                          <select
+                          <SearchableSelect
+                            options={dbMaterials.map(m => ({
+                              value: m._id,
+                              label: `[${m.itemCode || 'MAT'}] ${m.materialName}`
+                            }))}
                             value={row.material}
-                            onChange={(e) => handleItemRowChange(index, 'material', e.target.value)}
-                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none font-medium"
-                          >
-                            <option value="">Select Material</option>
-                            {dbMaterials.map(m => <option key={m._id} value={m._id}>[{m.itemCode || 'MAT'}] {m.materialName}</option>)}
-                          </select>
+                            onChange={(id) => handleItemRowChange(index, 'material', id)}
+                            placeholder="Select Material"
+                            searchPlaceholder="Search by code or name..."
+                            emptyText="No materials match your search"
+                          />
                         </td>
+
+                        {/* Color cell disabled: not used for costing
                         <td className="py-2.5 px-4">
                           <select
                             value={row.color}
@@ -533,6 +648,8 @@ const Costing = () => {
                             })}
                           </select>
                         </td>
+                        */}
+
                         <td className="py-2.5 px-4 text-center text-xs text-slate-500">{uomDisplay}</td>
                         <td className="py-2.5 px-4">
                           <input
@@ -607,6 +724,16 @@ const Costing = () => {
                       className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10"
                     />
                   </div>
+                  <div className="grid grid-cols-3 gap-3 items-center">
+                    <label className="text-xs text-slate-400 uppercase">Fabric Charges</label>
+                    <input
+                      type="number"
+                      value={fabricCharges || ''}
+                      onChange={(e) => setFabricCharges(e.target.value)}
+                      placeholder="0.00"
+                      className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10"
+                    />
+                  </div>
                 </div>
                 <div className="col-span-6 bg-slate-50/40 rounded-xl p-5 border border-slate-100 space-y-2 text-slate-600 font-medium">
                   <div className="flex justify-between border-b pb-2 border-slate-100 text-xs">
@@ -643,7 +770,7 @@ const Costing = () => {
                 </>
               ) : activeStatus === 'Pending Approval' ? (
                 <span className="text-xs text-amber-600 font-semibold italic p-2">
-                  ⏳ Awaiting approval from assigned workflow approver. Sheet is locked.
+                  Awaiting approval from assigned workflow approver. Sheet is locked.
                 </span>
               ) : (
                 <span className="text-xs text-slate-400 italic p-2">
@@ -700,7 +827,9 @@ const Costing = () => {
                 <tr className="border-b-2 border-slate-200 bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
                   <th className="p-3 w-8 text-center">#</th>
                   <th className="p-3">Material Descriptor</th>
+                  {/* Color Shade column disabled: not used for costing
                   <th className="p-3">Color Shade</th>
+                  */}
                   <th className="p-3 text-center">UOM</th>
                   <th className="p-3 text-right">Yield</th>
                   <th className="p-3 text-right">Wastage %</th>
@@ -715,12 +844,14 @@ const Costing = () => {
                     <tr key={i}>
                       <td className="p-3 text-center text-slate-400">{i + 1}</td>
                       <td className="p-3 font-semibold text-slate-900">{materialName}</td>
+                      {/* Color Shade cell disabled: not used for costing
                       <td className="p-3 text-slate-600 font-semibold">
                         {(() => {
                           const linkedColor = colors.find(c => c._id === (row.color?._id || row.color));
                           return linkedColor ? (linkedColor.colorName || linkedColor.name || linkedColor.nameS) : 'Default';
                         })()}
                       </td>
+                      */}
                       <td className="p-3 text-center">{row.uom}</td>
                       <td className="p-3 text-right">{row.consumption}</td>
                       <td className="p-3 text-right">{row.wastagePercentage}%</td>
@@ -736,7 +867,8 @@ const Costing = () => {
               <div className="w-80 text-xs space-y-2 font-medium">
                 <div className="flex justify-between"><span>Material Net Cost:</span><span>LKR {totalMaterialCost.toLocaleString()}</span></div>
                 <div className="flex justify-between"><span>Styling CM charges:</span><span>LKR {Number(cmCost).toLocaleString()}</span></div>
-                <div className="flex justify-between border-b pb-2"><span>Factory Overhead:</span><span>LKR {Number(overheadCost).toLocaleString()}</span></div>
+                <div className="flex justify-between"><span>Factory Overhead:</span><span>LKR {Number(overheadCost).toLocaleString()}</span></div>
+                <div className="flex justify-between border-b pb-2"><span>Fabric Charges:</span><span>LKR {Number(fabricCharges).toLocaleString()}</span></div>
                 <div className="flex justify-between text-sm font-bold text-slate-900 pt-1">
                   <span>GRAND TOTAL VALUE:</span>
                   <span className="text-emerald-900 text-base">LKR {grandTotal.toLocaleString()}</span>

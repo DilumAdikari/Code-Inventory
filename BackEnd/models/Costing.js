@@ -30,6 +30,7 @@ const CostingSchema = new mongoose.Schema({
   totalMaterialCost: { type: Number, default: 0 },
   cmCost: { type: Number, default: 0 },
   overheadCost: { type: Number, default: 0 },
+  fabricCharges: { type: Number, default: 0 }, // Fabric charges added to the costing
   grandTotal: { type: Number, default: 0 },
 
   status: { type: String, enum: ['Draft', 'Pending Approval', 'Completed', 'Rejected'], default: 'Draft' },
