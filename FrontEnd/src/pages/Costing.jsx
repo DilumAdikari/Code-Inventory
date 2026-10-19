@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Loader2, ArrowLeft, Check, FileSpreadsheet, X, Printer, Send } from 'lucide-react';
+import { Plus, Loader2, ArrowLeft, FileSpreadsheet, X, Printer, Send } from 'lucide-react';
 import axios from 'axios';
-import { API_URL } from "../api/config";  
+import { API_URL } from '../api/config';
 
 // Letters, numbers, "-" and "/" only, max 20 characters
 const COSTING_NO_REGEX = /^[A-Z0-9\-\/]{1,20}$/;
+
+// Returns the value as an array, or an empty array if it is not one
+const toArray = (value) => (Array.isArray(value) ? value : []);
 
 const Costing = () => {
   const [costingList, setCostingList] = useState([]);
@@ -44,24 +47,25 @@ const Costing = () => {
 
   const currentUsername = localStorage.getItem('username') || 'DILUM';
 
+  // Loads every list this page needs from the server
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [costingRes, soRes, wfRes, matRes, supRes, colRes] = await Promise.all([
-        axios.get('${API_URL}/costing').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/sales-orders').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/workflows').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/materials').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/suppliers').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/colors').catch(() => ({ data: [] }))
+      const [costingRes, salesOrderRes, workflowRes, materialRes, supplierRes, colorRes] = await Promise.all([
+        axios.get(`${API_URL}/costing`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/sales-orders`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/workflows`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/materials`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/suppliers`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/colors`).catch(() => ({ data: [] }))
       ]);
 
-      setCostingList(costingRes.data || []);
-      setSalesOrders(soRes.data || []);
-      setWorkflows(wfRes.data || []);
-      setDbMaterials(matRes.data || []);
-      setDbSuppliers(supRes.data || []);
-      setColors(colRes.data || []);
+      setCostingList(toArray(costingRes.data));
+      setSalesOrders(toArray(salesOrderRes.data));
+      setWorkflows(toArray(workflowRes.data));
+      setDbMaterials(toArray(materialRes.data));
+      setDbSuppliers(toArray(supplierRes.data));
+      setColors(toArray(colorRes.data));
       setLoading(false);
     } catch (err) {
       console.error(err);
@@ -71,6 +75,7 @@ const Costing = () => {
 
   useEffect(() => { loadInitialData(); }, []);
 
+  // Opens an existing costing: Completed ones open in print view, others open in the editable grid
   const handleRowClick = (costing) => {
     setCostingId(costing._id);
     setActiveStatus(costing.status);
@@ -107,18 +112,19 @@ const Costing = () => {
     }
   };
 
+  // Validates the costing number and creates a draft costing on the server
   const handleProceedToSheet = async (e) => {
     e.preventDefault();
 
     const normalizedNo = costingNo.trim().toUpperCase();
 
     if (!COSTING_NO_REGEX.test(normalizedNo)) {
-      setCostingNoError('අකුරු සහ ඉලක්කම් (- / සමඟ) 20 ට වඩා නොවිය යුතුයි');
+      setCostingNoError('Only letters, numbers, "-" and "/" are allowed (max 20 characters)');
       return;
     }
 
     if (!initialForm.salesOrder || !initialForm.workflowTemplate) {
-      alert("Please select a valid Sales Order and Approval Workflow Matrix.");
+      alert('Please select a valid Sales Order and Approval Workflow Matrix.');
       return;
     }
 
@@ -142,7 +148,7 @@ const Costing = () => {
         createdBy: currentUsername
       };
 
-      const response = await axios.post('${API_URL}/costing/save', initialPayload);
+      const response = await axios.post(`${API_URL}/costing/save`, initialPayload);
       if (response.data && response.data._id) {
         setCostingId(response.data._id);
         setActiveCostingNo(response.data.costingNo || normalizedNo);
@@ -160,58 +166,63 @@ const Costing = () => {
       loadInitialData();
     } catch (err) {
       console.error(err);
-      // Backend 409 (duplicate) and 400 (format) messages show here
-      alert(err.response?.data?.message || "Failed to initialize costing draft.");
+      // Backend 409 (duplicate) and 400 (format) messages are shown here
+      alert(err.response?.data?.message || 'Failed to initialize costing draft.');
     } finally {
       setInitiationLoading(false);
     }
   };
 
+  // Updates one grid row and recalculates its totals
   const handleItemRowChange = (index, field, value) => {
     if (activeStatus === 'Completed' || activeStatus === 'Pending Approval') return;
 
     const updatedItems = [...items];
     updatedItems[index][field] = value;
 
+    // When the material changes, copy its UOM and unit cost from the material master
     if (field === 'material') {
-      const selectedMat = dbMaterials.find(m => m._id === value);
-      if (selectedMat) {
-        const uomData = selectedMat.uom;
+      const selectedMaterial = dbMaterials.find(m => m._id === value);
+      if (selectedMaterial) {
+        const uomData = selectedMaterial.uom;
         updatedItems[index]['uom'] = uomData && typeof uomData === 'object'
           ? (uomData.abbreviation || uomData.name || 'Pcs')
           : (uomData || 'Pcs');
-        updatedItems[index]['unitCost'] = Number(selectedMat.unitCost || selectedMat.unitPrice || 0);
+        updatedItems[index]['unitCost'] = Number(selectedMaterial.unitCost || selectedMaterial.unitPrice || 0);
       }
     }
 
-    const cnsm = Number(updatedItems[index].consumption || 0);
-    const uCost = Number(updatedItems[index].unitCost || 0);
-    const wPer = Number(updatedItems[index].wastagePercentage || 0);
-    const ttlCost = cnsm * uCost;
-    const ttlWithWastage = ttlCost + (ttlCost * (wPer / 100));
-    updatedItems[index].totalCost = ttlCost;
-    updatedItems[index].totalWithWastage = ttlWithWastage;
+    const consumption = Number(updatedItems[index].consumption || 0);
+    const unitCost = Number(updatedItems[index].unitCost || 0);
+    const wastagePercentage = Number(updatedItems[index].wastagePercentage || 0);
+    const totalCost = consumption * unitCost;
+    const totalWithWastage = totalCost + (totalCost * (wastagePercentage / 100));
+    updatedItems[index].totalCost = totalCost;
+    updatedItems[index].totalWithWastage = totalWithWastage;
 
     setItems(updatedItems);
   };
 
+  // Returns only the colors that are linked to the selected material
   const getFilteredColorsForMaterial = (materialId) => {
     if (!materialId) return [];
-    const selectedMat = dbMaterials.find(m => m._id === materialId);
-    if (selectedMat && selectedMat.colors && selectedMat.colors.length > 0) {
-      return colors.filter(c => selectedMat.colors.some(matColor => {
-        const matColorId = matColor._id || matColor;
-        return String(matColorId) === String(c._id);
+    const selectedMaterial = dbMaterials.find(m => m._id === materialId);
+    if (selectedMaterial && selectedMaterial.colors && selectedMaterial.colors.length > 0) {
+      return colors.filter(c => selectedMaterial.colors.some(materialColor => {
+        const materialColorId = materialColor._id || materialColor;
+        return String(materialColorId) === String(c._id);
       }));
     }
     return [];
   };
 
+  // Adds an empty material row to the grid
   const handleAddRow = () => {
     const defaultSupplierId = dbSuppliers[0]?._id || '';
     setItems([...items, { material: '', color: '', supplier: defaultSupplierId, uom: 'Pcs', consumption: 0, wastagePercentage: 0, unitCost: 0, totalCost: 0, totalWithWastage: 0 }]);
   };
 
+  // Removes a material row, keeping at least one row
   const handleRemoveRow = (index) => {
     if (items.length > 1) {
       setItems(items.filter((_, i) => i !== index));
@@ -221,6 +232,7 @@ const Costing = () => {
   const totalMaterialCost = items.reduce((sum, item) => sum + (item.totalWithWastage || 0), 0);
   const grandTotal = totalMaterialCost + Number(cmCost || 0) + Number(overheadCost || 0);
 
+  // Saves the costing with the given status; auto-draft saves do not show alerts
   const executeSaveOperation = async (finalStatus, isAutoDraft = false) => {
     try {
       if (!isAutoDraft) setSubmitting(true);
@@ -241,7 +253,7 @@ const Costing = () => {
           totalWithWastage: Number(item.totalWithWastage || 0)
         }));
 
-      // costingNo is not sent here: it was set once at creation and is not editable
+      // costingNo is not sent here: it is set once at creation and cannot be edited
       const payload = {
         costingId,
         costingDate: initialForm.costingDate,
@@ -256,7 +268,7 @@ const Costing = () => {
         createdBy: currentUsername
       };
 
-      const response = await axios.post('${API_URL}/costing/save', payload);
+      const response = await axios.post(`${API_URL}/costing/save`, payload);
 
       if (response.data && response.data.costingNo) {
         setActiveCostingNo(response.data.costingNo);
@@ -272,12 +284,13 @@ const Costing = () => {
       resetViews();
     } catch (err) {
       console.error(err);
-      if (!isAutoDraft) alert(err.response?.data?.message || "Error saving costing profile details.");
+      if (!isAutoDraft) alert(err.response?.data?.message || 'Error saving costing details.');
     } finally {
       if (!isAutoDraft) setSubmitting(false);
     }
   };
 
+  // Saves a draft automatically when going back from a draft sheet
   const handleBackWithDraftSave = async () => {
     if (activeStatus === 'Draft') {
       await executeSaveOperation('Draft', true);
@@ -286,6 +299,7 @@ const Costing = () => {
     }
   };
 
+  // Returns to the list view and reloads the data
   const resetViews = () => {
     setCostingId(null);
     setActiveCostingNo('');
@@ -295,6 +309,7 @@ const Costing = () => {
     loadInitialData();
   };
 
+  // Returns the badge classes for a costing status
   const getStatusStyle = (status) => {
     if (status === 'Completed') return 'bg-emerald-50 border-emerald-200 text-emerald-700 font-bold';
     if (status === 'Pending Approval') return 'bg-amber-50 border-amber-200 text-amber-700 font-bold';
@@ -409,26 +424,45 @@ const Costing = () => {
 
               <div className="space-y-1">
                 <label className="block text-[11px] text-slate-400 font-medium uppercase">Costing Date</label>
-                <input type="date" required value={initialForm.costingDate} onChange={(e) => setInitialForm({ ...initialForm, costingDate: e.target.value })} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm focus:outline-none" />
+                <input
+                  type="date"
+                  required
+                  value={initialForm.costingDate}
+                  onChange={(e) => setInitialForm({ ...initialForm, costingDate: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm focus:outline-none"
+                />
               </div>
+
               <div className="space-y-1">
                 <label className="block text-[11px] text-slate-400 font-medium uppercase">Select Live Sales Order *</label>
-                <select required value={initialForm.salesOrder} onChange={(e) => setInitialForm({ ...initialForm, salesOrder: e.target.value })} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm focus:outline-none">
+                <select
+                  required
+                  value={initialForm.salesOrder}
+                  onChange={(e) => setInitialForm({ ...initialForm, salesOrder: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm focus:outline-none"
+                >
                   <option value="">Choose Live Contract Route</option>
                   {salesOrders.map(so => <option key={so._id} value={so._id}>{so.orderRef} - {so.buyerName}</option>)}
                 </select>
               </div>
+
               <div className="space-y-1">
                 <label className="block text-[11px] text-slate-400 font-medium uppercase">Attach Approval Workflow Template *</label>
-                <select required value={initialForm.workflowTemplate} onChange={(e) => setInitialForm({ ...initialForm, workflowTemplate: e.target.value })} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm focus:outline-none">
+                <select
+                  required
+                  value={initialForm.workflowTemplate}
+                  onChange={(e) => setInitialForm({ ...initialForm, workflowTemplate: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 h-11 text-sm focus:outline-none"
+                >
                   <option value="">Select Sign-off Workflow Matrix</option>
                   {workflows.map(wf => <option key={wf._id} value={wf._id}>{wf.code}</option>)}
                 </select>
               </div>
+
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setIsInitialModalOpen(false)} className="flex-1 py-2 bg-slate-100 rounded-lg text-slate-500 font-medium">Cancel</button>
                 <button type="submit" disabled={initiationLoading} className="flex-1 py-2 bg-emerald-900 hover:bg-emerald-800 text-white rounded-lg font-medium shadow-sm flex items-center justify-center">
-                  {initiationLoading ? <Loader2 className="animate-spin" size={14} /> : "Build Sheet Grid"}
+                  {initiationLoading ? <Loader2 className="animate-spin" size={14} /> : 'Build Sheet Grid'}
                 </button>
               </div>
             </form>
@@ -475,25 +509,61 @@ const Costing = () => {
                       <tr key={index}>
                         <td className="py-2.5 px-4 text-center text-slate-400 text-xs">{index + 1}</td>
                         <td className="py-2.5 px-4">
-                          <select value={row.material} onChange={(e) => handleItemRowChange(index, 'material', e.target.value)} className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none font-medium">
+                          <select
+                            value={row.material}
+                            onChange={(e) => handleItemRowChange(index, 'material', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none font-medium"
+                          >
                             <option value="">Select Material</option>
                             {dbMaterials.map(m => <option key={m._id} value={m._id}>[{m.itemCode || 'MAT'}] {m.materialName}</option>)}
                           </select>
                         </td>
                         <td className="py-2.5 px-4">
-                          <select value={row.color} onChange={(e) => handleItemRowChange(index, 'color', e.target.value)} disabled={!row.material} className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50">
-                            <option value="">{row.material ? "Select Shade / Color" : "Choose Material First"}</option>
+                          <select
+                            value={row.color}
+                            onChange={(e) => handleItemRowChange(index, 'color', e.target.value)}
+                            disabled={!row.material}
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50"
+                          >
+                            <option value="">{row.material ? 'Select Shade / Color' : 'Choose Material First'}</option>
                             {filteredColors.map(c => {
-                              const finalColorName = c.colorName || c.name || c.nameS || 'Color Active';
-                              const finalColorCode = c.colorCode || c.code || 'N/A';
-                              return <option key={c._id} value={c._id}>{finalColorName} ({finalColorCode})</option>;
+                              const colorName = c.colorName || c.name || c.nameS || 'Color Active';
+                              const colorCode = c.colorCode || c.code || 'N/A';
+                              return <option key={c._id} value={c._id}>{colorName} ({colorCode})</option>;
                             })}
                           </select>
                         </td>
                         <td className="py-2.5 px-4 text-center text-xs text-slate-500">{uomDisplay}</td>
-                        <td className="py-2.5 px-4"><input type="number" step="any" value={row.consumption || ''} onChange={(e) => handleItemRowChange(index, 'consumption', e.target.value)} placeholder="0.00" className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-right text-xs text-slate-800 focus:outline-none font-medium" /></td>
-                        <td className="py-2.5 px-4"><input type="number" step="any" value={row.wastagePercentage || ''} onChange={(e) => handleItemRowChange(index, 'wastagePercentage', e.target.value)} placeholder="0.00" className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-right text-xs text-slate-800 focus:outline-none font-medium" /></td>
-                        <td className="py-2.5 px-4"><input type="number" step="any" value={row.unitCost || ''} onChange={(e) => handleItemRowChange(index, 'unitCost', e.target.value)} placeholder="0.00" className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-right text-xs text-slate-800 focus:outline-none font-medium" /></td>
+                        <td className="py-2.5 px-4">
+                          <input
+                            type="number"
+                            step="any"
+                            value={row.consumption || ''}
+                            onChange={(e) => handleItemRowChange(index, 'consumption', e.target.value)}
+                            placeholder="0.00"
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-right text-xs text-slate-800 focus:outline-none font-medium"
+                          />
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <input
+                            type="number"
+                            step="any"
+                            value={row.wastagePercentage || ''}
+                            onChange={(e) => handleItemRowChange(index, 'wastagePercentage', e.target.value)}
+                            placeholder="0.00"
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-right text-xs text-slate-800 focus:outline-none font-medium"
+                          />
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <input
+                            type="number"
+                            step="any"
+                            value={row.unitCost || ''}
+                            onChange={(e) => handleItemRowChange(index, 'unitCost', e.target.value)}
+                            placeholder="0.00"
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-right text-xs text-slate-800 focus:outline-none font-medium"
+                          />
+                        </td>
                         <td className="py-2.5 px-4 text-right text-slate-600 text-xs">{row.totalCost?.toFixed(2)}</td>
                         <td className="py-2.5 px-4 text-right text-slate-900 font-semibold text-xs">{row.totalWithWastage?.toFixed(2)}</td>
                         {activeStatus === 'Draft' && (
@@ -519,11 +589,23 @@ const Costing = () => {
                 <div className="col-span-6 space-y-3">
                   <div className="grid grid-cols-3 gap-3 items-center">
                     <label className="text-xs text-slate-400 uppercase">Styling CM Charges</label>
-                    <input type="number" value={cmCost || ''} onChange={(e) => setCmCost(e.target.value)} placeholder="0.00" className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10" />
+                    <input
+                      type="number"
+                      value={cmCost || ''}
+                      onChange={(e) => setCmCost(e.target.value)}
+                      placeholder="0.00"
+                      className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10"
+                    />
                   </div>
                   <div className="grid grid-cols-3 gap-3 items-center">
                     <label className="text-xs text-slate-400 uppercase">Cutting Charges</label>
-                    <input type="number" value={overheadCost || ''} onChange={(e) => setOverheadCost(e.target.value)} placeholder="0.00" className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10" />
+                    <input
+                      type="number"
+                      value={overheadCost || ''}
+                      onChange={(e) => setOverheadCost(e.target.value)}
+                      placeholder="0.00"
+                      className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none h-10"
+                    />
                   </div>
                 </div>
                 <div className="col-span-6 bg-slate-50/40 rounded-xl p-5 border border-slate-100 space-y-2 text-slate-600 font-medium">
@@ -542,10 +624,20 @@ const Costing = () => {
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
               {activeStatus === 'Draft' ? (
                 <>
-                  <button type="button" disabled={submitting} onClick={() => executeSaveOperation('Draft')} className="px-4 py-2 bg-slate-200 text-slate-700 font-semibold rounded-lg text-sm transition-all">
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => executeSaveOperation('Draft')}
+                    className="px-4 py-2 bg-slate-200 text-slate-700 font-semibold rounded-lg text-sm transition-all"
+                  >
                     Save Draft
                   </button>
-                  <button type="button" disabled={submitting} onClick={() => executeSaveOperation('Pending Approval')} className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg text-sm flex items-center gap-1.5 shadow-sm transition-all">
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => executeSaveOperation('Pending Approval')}
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg text-sm flex items-center gap-1.5 shadow-sm transition-all"
+                  >
                     {submitting ? <Loader2 className="animate-spin" size={16} /> : <><Send size={14} /> Submit for Approval</>}
                   </button>
                 </>
@@ -589,8 +681,18 @@ const Costing = () => {
             </div>
 
             <div className="bg-slate-50 p-4 rounded-lg grid grid-cols-2 gap-4 text-xs">
-              <div>Sales Order Reference: <span className="font-bold block text-sm text-slate-900 mt-0.5">{salesOrders.find(s => s._id === initialForm.salesOrder)?.orderRef || 'N/A'}</span></div>
-              <div>Workflow Template Route: <span className="font-bold block text-sm text-slate-900 mt-0.5">{workflows.find(w => w._id === initialForm.workflowTemplate)?.code || 'N/A'}</span></div>
+              <div>
+                Sales Order Reference:
+                <span className="font-bold block text-sm text-slate-900 mt-0.5">
+                  {salesOrders.find(s => s._id === initialForm.salesOrder)?.orderRef || 'N/A'}
+                </span>
+              </div>
+              <div>
+                Workflow Template Route:
+                <span className="font-bold block text-sm text-slate-900 mt-0.5">
+                  {workflows.find(w => w._id === initialForm.workflowTemplate)?.code || 'N/A'}
+                </span>
+              </div>
             </div>
 
             <table className="w-full text-left text-xs border-collapse">
@@ -608,11 +710,11 @@ const Costing = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {items.map((row, i) => {
-                  const matName = dbMaterials.find(m => m._id === row.material)?.materialName || 'Component Material';
+                  const materialName = dbMaterials.find(m => m._id === row.material)?.materialName || 'Component Material';
                   return (
                     <tr key={i}>
                       <td className="p-3 text-center text-slate-400">{i + 1}</td>
-                      <td className="p-3 font-semibold text-slate-900">{matName}</td>
+                      <td className="p-3 font-semibold text-slate-900">{materialName}</td>
                       <td className="p-3 text-slate-600 font-semibold">
                         {(() => {
                           const linkedColor = colors.find(c => c._id === (row.color?._id || row.color));
