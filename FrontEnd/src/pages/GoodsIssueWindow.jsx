@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Loader2, ArrowLeft, Send, CheckCircle, AlertCircle, Package, Save, Printer } from 'lucide-react';
-import { API_URL } from "../api/config";
+import { Loader2, Send, CheckCircle, AlertCircle, Save, Printer } from 'lucide-react';
+import { API_URL } from '../api/config';
+
+// Returns the value as an array, or an empty array if it is not one
+const toArray = (value) => (Array.isArray(value) ? value : []);
+
+// Formats a date as YYYY-MM-DD, or '-' if the value is missing or invalid
+const formatDate = (value) => {
+  const date = new Date(value);
+  return isNaN(date) ? '-' : date.toISOString().split('T')[0];
+};
 
 const GoodsIssueWindow = () => {
   const { id } = useParams();
@@ -13,52 +22,57 @@ const GoodsIssueWindow = () => {
   const [stocks, setStocks] = useState([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [editableItems, setEditableItems] = useState([]);
-  const [cmCost, setCmCost] = useState(0); 
+  const [cmCost, setCmCost] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [approvaling, setApprovaling] = useState(false);
 
   const currentUsername = localStorage.getItem('username') || 'ADMIN';
 
+  // Loads the issue, warehouses, stock, costing and production order data for this page
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [issueRes, whRes, stockRes, costingRes, poRes] = await Promise.all([
-          axios.get('${API_URL}/material-issues'),
-          axios.get('${API_URL}/warehouses'),
-          axios.get('${API_URL}/stocks').catch(() => ({ data: [] })),
-          axios.get('${API_URL}/costing').catch(() => ({ data: [] })),
-          axios.get('${API_URL}/production-orders').catch(() => ({ data: [] }))
+          axios.get(`${API_URL}/material-issues`),
+          axios.get(`${API_URL}/warehouses`).catch(() => ({ data: [] })),
+          axios.get(`${API_URL}/stocks`).catch(() => ({ data: [] })),
+          axios.get(`${API_URL}/costing`).catch(() => ({ data: [] })),
+          axios.get(`${API_URL}/production-orders`).catch(() => ({ data: [] }))
         ]);
 
-        const currentIssue = issueRes.data.find(i => i._id === id);
-        setIssueData(currentIssue);
+        const issues = toArray(issueRes.data);
+        const costings = toArray(costingRes.data);
+        const productionOrders = toArray(poRes.data);
+
+        const currentIssue = issues.find(i => String(i._id) === String(id));
+        setIssueData(currentIssue || null);
 
         if (currentIssue?.warehouse) {
           setSelectedWarehouse(currentIssue.warehouse._id || currentIssue.warehouse);
         }
 
-        
+        // Find the costing linked to this issue, to show its CM cost
         if (currentIssue) {
           let matchedCosting = null;
           const poId = currentIssue.productionOrder?._id || currentIssue.productionOrder;
           const soId = currentIssue.salesOrder?._id || currentIssue.salesOrder;
 
-          // 1. Production Order එක හරහා Costing එක සෙවීම
+          // 1. Match through the production order
           if (poId) {
-            const currentPo = poRes.data.find(p => String(p._id) === String(poId));
+            const currentPo = productionOrders.find(p => String(p._id) === String(poId));
             const poSoId = currentPo?.salesOrder?._id || currentPo?.salesOrder;
 
-            matchedCosting = costingRes.data.find(c => {
+            matchedCosting = costings.find(c => {
               const cPoId = c.productionOrder?._id || c.productionOrder;
               const cSoId = c.salesOrder?._id || c.salesOrder;
               return (cPoId && String(cPoId) === String(poId)) || (poSoId && cSoId && String(cSoId) === String(poSoId));
             });
           }
 
-          
+          // 2. Fall back to matching through the sales order
           if (!matchedCosting && soId) {
-            matchedCosting = costingRes.data.find(c => {
+            matchedCosting = costings.find(c => {
               const cSoId = c.salesOrder?._id || c.salesOrder;
               return cSoId && String(cSoId) === String(soId);
             });
@@ -83,18 +97,20 @@ const GoodsIssueWindow = () => {
           })));
         }
 
-        setWarehouses(whRes.data || []);
-        setStocks(stockRes.data || []);
+        setWarehouses(toArray(whRes.data));
+        setStocks(toArray(stockRes.data));
         setLoading(false);
       } catch (err) {
-        console.error("❌ Failed to load issue data:", err);
+        console.error('Failed to load issue data:', err);
         setLoading(false);
       }
     };
+
     fetchData();
   }, [id]);
 
-  const getAvailableStock = (materialId, colorId) => {
+  // Returns the available stock of a material in the selected warehouse
+  const getAvailableStock = (materialId) => {
     if (!materialId || !selectedWarehouse) return 0;
     const stockEntry = stocks.find(s => {
       const sMatId = s.material?._id || s.material;
@@ -104,12 +120,13 @@ const GoodsIssueWindow = () => {
     return stockEntry ? Number(stockEntry.qty || 0) : 0;
   };
 
+  // Updates the issue quantity of one row, within the allocated limit
   const handleIssueQtyChange = (index, value) => {
     const numValue = Number(value) || 0;
     const item = editableItems[index];
 
     if (numValue < 0) {
-      alert("Issue quantity cannot be negative.");
+      alert('Issue quantity cannot be negative.');
       return;
     }
 
@@ -119,88 +136,79 @@ const GoodsIssueWindow = () => {
     }
 
     const updated = [...editableItems];
-    updated[index].issueQty = numValue;
+    updated[index] = { ...updated[index], issueQty: numValue };
     setEditableItems(updated);
   };
 
+  // Builds the item payload sent to the server
+  const buildItemsPayload = () => editableItems.map(item => ({
+    material: item.materialId,
+    color: item.colorId,
+    uom: item.uom,
+    allocatedQty: item.allocatedQty,
+    issuedQty: item.issueQty,
+    value: item.value
+  }));
+
+  // Saves the warehouse and item quantities as a draft
   const handleSaveDraft = async () => {
     if (!selectedWarehouse) {
-      alert("Please select a warehouse.");
+      alert('Please select a warehouse.');
       return;
     }
 
     try {
       setSubmitting(true);
-      await axios.put(
-        `${API_URL}/material-issues/update-items/${id}`,
-        {
-          warehouse: selectedWarehouse,
-          items: editableItems.map(item => ({
-            material: item.materialId,
-            color: item.colorId,
-            uom: item.uom,
-            allocatedQty: item.allocatedQty,
-            issuedQty: item.issueQty,
-            value: item.value
-          }))
-        }
-      );
-      alert("Draft saved successfully.");
+      await axios.put(`${API_URL}/material-issues/update-items/${id}`, {
+        warehouse: selectedWarehouse,
+        items: buildItemsPayload()
+      });
+      alert('Draft saved successfully.');
     } catch (err) {
-      console.error("❌ Save failed:", err);
-      alert("Failed to save draft.");
+      console.error('Save failed:', err);
+      alert('Failed to save draft.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Saves the current quantities, then submits the issue for approval
   const handleSubmitForApproval = async () => {
     if (!issueData?.workflow) {
-      alert("No workflow assigned to this issue. Please recreate with a workflow.");
+      alert('No workflow assigned to this issue. Please recreate with a workflow.');
       return;
     }
 
     if (!selectedWarehouse) {
-      alert("Please select a warehouse before submitting.");
+      alert('Please select a warehouse before submitting.');
       return;
     }
 
-    for (let item of editableItems) {
+    for (const item of editableItems) {
       if (item.issueQty <= 0) {
         alert(`Please enter Issue Qty for ${item.materialName}.`);
         return;
       }
     }
 
-    if (!window.confirm("Submit this Material Issue for approval?")) return;
+    if (!window.confirm('Submit this Material Issue for approval?')) return;
 
     try {
       setApprovaling(true);
-      await axios.put(
-        `${API_URL}/material-issues/update-items/${id}`,
-        {
-          warehouse: selectedWarehouse,
-          items: editableItems.map(item => ({
-            material: item.materialId,
-            color: item.colorId,
-            uom: item.uom,
-            allocatedQty: item.allocatedQty,
-            issuedQty: item.issueQty,
-            value: item.value
-          }))
-        }
-      );
+      await axios.put(`${API_URL}/material-issues/update-items/${id}`, {
+        warehouse: selectedWarehouse,
+        items: buildItemsPayload()
+      });
 
-      const res = await axios.post(
-        `${API_URL}/material-issues/submit-approval/${id}`,
-        { createdBy: currentUsername }
-      );
+      const res = await axios.post(`${API_URL}/material-issues/submit-approval/${id}`, {
+        createdBy: currentUsername
+      });
 
-      alert(`Material Issue submitted for approval! Assigned to: ${res.data.approver}`);
+      alert(`Material Issue submitted for approval! Assigned to: ${res.data?.approver || 'the assigned approver'}`);
       setIssueData(prev => ({ ...prev, status: 'Pending Approval' }));
     } catch (err) {
-      console.error("❌ Submit approval failed:", err);
-      alert(err.response?.data?.message || "Failed to submit for approval.");
+      console.error('Submit approval failed:', err);
+      alert(err.response?.data?.message || 'Failed to submit for approval.');
     } finally {
       setApprovaling(false);
     }
@@ -226,16 +234,15 @@ const GoodsIssueWindow = () => {
   const totalIssue = editableItems.reduce((sum, i) => sum + Number(i.issueQty || 0), 0);
 
   const warehouseName = issueData.warehouse?.warehouseName ||
-    warehouses.find(w => w._id === (issueData.warehouse?._id || issueData.warehouse))?.warehouseName ||
+    warehouses.find(w => String(w._id) === String(issueData.warehouse?._id || issueData.warehouse))?.warehouseName ||
     'Main Store';
 
-   
   const plantName = issueData.plant?.name || issueData.plant?.factoryCode || 'N/A';
 
   return (
     <div className="w-full space-y-6 text-sm font-normal text-slate-700">
 
-      {/* Professional A4 Print Styles (Border & Headers/Footers removed) */}
+      {/* A4 print styles (borders and headers/footers removed) */}
       <style>{`
         @media print {
           body > *:not(#root) {
@@ -298,7 +305,7 @@ const GoodsIssueWindow = () => {
         }
       `}</style>
 
-      {/* Printable Sheet */}
+      {/* Printable sheet */}
       <div className="printable-sheet space-y-6 bg-white p-6 rounded-xl border border-slate-200">
 
         {/* HEADER */}
@@ -309,7 +316,7 @@ const GoodsIssueWindow = () => {
           </div>
           <div className="text-right text-xs space-y-1 font-medium">
             <div>ISSUE NO : <span className="font-bold text-slate-900">{issueData.issueNo || `ISS-${issueData._id?.slice(-6).toUpperCase()}`}</span></div>
-            <div>DATE : <span className="font-bold">{new Date(issueData.createdAt).toISOString().split('T')[0]}</span></div>
+            <div>DATE : <span className="font-bold">{formatDate(issueData.createdAt)}</span></div>
           </div>
         </div>
 
@@ -372,7 +379,7 @@ const GoodsIssueWindow = () => {
               <tbody className="divide-y divide-slate-200 text-slate-800">
                 {editableItems.length > 0 ? (
                   editableItems.map((item, idx) => {
-                    const availableStock = getAvailableStock(item.materialId, item.colorId);
+                    const availableStock = getAvailableStock(item.materialId);
 
                     return (
                       <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
