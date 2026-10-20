@@ -25,9 +25,9 @@ const Purchases = () => {
     try {
       setLoading(true);
       const [poRes, supRes, wfRes] = await Promise.all([
-        axios.get('${API_URL}/purchases'),
-        axios.get('${API_URL}/suppliers').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/workflows').catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/purchases`),
+        axios.get(`${API_URL}/suppliers`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/workflows`).catch(() => ({ data: [] }))
       ]);
       setPurchaseOrders(poRes.data || []);
 
