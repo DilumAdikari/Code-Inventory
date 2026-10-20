@@ -10,8 +10,8 @@ import {
   ShoppingCart,
   Tag,
   FileBarChart, 
-  RotateCcw,    // 🌟 GRN Return සඳහා අයිකන් එක
-  PackageMinus  // 🌟 Goods Issue Report සඳහා අයිකන් එක
+  RotateCcw,    
+  PackageMinus  
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -32,7 +32,7 @@ const Sidebar = () => {
     return !!storedPermissions[moduleName];
   };
 
-  // 🌟 Reports dropdown එක පෙන්වන්න — අඩුම තරමේ එක report එකකටවත් access තියෙනවා නම්
+  
   const hasAnyReportAccess = hasAccess('grnHistory') || hasAccess('materialIssuing');
 
   const menuItems = [
@@ -45,7 +45,7 @@ const Sidebar = () => {
     { icon: <Truck size={20} />, label: 'Material Issuing', path: '/material-issuing', permissionKey: 'materialIssuing' },
     { icon: <FileText size={20} />, label: 'Sales Invoices', path: '/invoices', permissionKey: 'materialIssuing' },
     { icon: <FileClock size={20} />, label: 'GRN History', path: '/grn-history', permissionKey: 'grnHistory' },
-    // 🌟 GRN Return මෙනු අයිතමය GRN History එකට යටින් කෙලින්ම එකතු කළා
+
     { icon: <RotateCcw size={20} />, label: 'GRN Return', path: '/grn-return', permissionKey: 'grnHistory' },
     { icon: <Warehouse size={20} />, label: 'Live Stock Ledger', path: '/stock-overview', permissionKey: 'stockOverview' },
   ];
@@ -143,7 +143,7 @@ const Sidebar = () => {
             </div>
           )}
 
-          {/* 🌟 REPORTS DROPDOWN (GRN Report + Goods Issue Report) */}
+          {/*  REPORTS DROPDOWN (GRN Report + Goods Issue Report) */}
           {hasAnyReportAccess && (
             <div className="space-y-1 w-full">
               <button
