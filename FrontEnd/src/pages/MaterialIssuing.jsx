@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, CheckCircle, AlertCircle, Loader2, X } from 'lucide-react';
-import { API_URL } from "../api/config";   
+import { API_URL } from '../api/config';
+
+// Returns the value as an array, or an empty array if it is not one
+const toArray = (value) => (Array.isArray(value) ? value : []);
 
 const MaterialIssuing = () => {
   const [issuesList, setIssuesList] = useState([]);
@@ -13,71 +16,79 @@ const MaterialIssuing = () => {
 
   const [productionOrders, setProductionOrders] = useState([]);
   const [workflows, setWorkflows] = useState([]);
-  const [factories, setFactories] = useState([]); 
+  const [factories, setFactories] = useState([]);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [manualIssueForm, setManualIssueForm] = useState({
     salesOrderId: '',
     productionOrderId: '',
     workflowId: '',
-    plantId: '', 
+    plantId: '',
     issueDate: new Date().toISOString().split('T')[0],
     items: []
   });
   const [poBOMItems, setPoBOMItems] = useState([]);
   const [saving, setSaving] = useState(false);
 
-
   const currentUsername = localStorage.getItem('username') || 'ADMIN';
 
+  // Loads material issues and the master lists used by the manual issue form
   const fetchIssues = async () => {
     try {
       const [response, poRes, wfRes, factoryRes] = await Promise.all([
-        axios.get('${API_URL}/material-issues'),
-        axios.get('${API_URL}/production-orders'),
-        axios.get('${API_URL}/workflows'),
-        axios.get('${API_URL}/factories').catch(() => ({ data: [] })) 
+        axios.get(`${API_URL}/material-issues`),
+        axios.get(`${API_URL}/production-orders`),
+        axios.get(`${API_URL}/workflows`),
+        axios.get(`${API_URL}/factories`).catch(() => ({ data: [] }))
       ]);
-      setIssuesList(response.data);
-      setProductionOrders(poRes.data);
-      setWorkflows(wfRes.data || []);
-      setFactories(factoryRes.data || []);
+      setIssuesList(toArray(response.data));
+      setProductionOrders(toArray(poRes.data));
+      setWorkflows(toArray(wfRes.data));
+      setFactories(toArray(factoryRes.data));
       setLoading(false);
     } catch (err) {
-      console.error("❌ Failed to fetch:", err);
+      console.error('Failed to fetch material issues:', err);
       setLoading(false);
     }
   };
 
   useEffect(() => { fetchIssues(); }, []);
 
+  // Loads the BOM items of the selected production order
   const handleProductionOrderChange = async (poId) => {
     const selectedPO = productionOrders.find(po => po._id === poId);
     const soId = selectedPO?.salesOrder?._id || selectedPO?.salesOrder || '';
     setManualIssueForm(prev => ({ ...prev, productionOrderId: poId, salesOrderId: soId }));
-    if (!poId) { setPoBOMItems([]); return; }
+
+    if (!poId) {
+      setPoBOMItems([]);
+      return;
+    }
+
     try {
       const res = await axios.get(`${API_URL}/material-issues/production-order-bom/${poId}`);
-      setPoBOMItems(res.data);
+      setPoBOMItems(toArray(res.data));
     } catch (err) {
-      console.error("BOM load failed", err);
+      console.error('BOM load failed:', err);
+      setPoBOMItems([]);
     }
   };
 
+  // Validates the form and saves a manual material issue as Draft
   const handleSaveManualIssue = async () => {
     if (!manualIssueForm.productionOrderId) {
-      alert("Please select a Production Order.");
+      alert('Please select a Production Order.');
       return;
     }
     if (!manualIssueForm.workflowId) {
-      alert("Please select an Approval Workflow.");
+      alert('Please select an Approval Workflow.');
       return;
     }
     if (!manualIssueForm.plantId) {
-      alert("Please select a Plant / Factory.");
+      alert('Please select a Plant / Factory.');
       return;
     }
     if (poBOMItems.length === 0) {
-      alert("No BOM items found for this Production Order.");
+      alert('No BOM items found for this Production Order.');
       return;
     }
 
@@ -87,44 +98,62 @@ const MaterialIssuing = () => {
         salesOrderId: manualIssueForm.salesOrderId,
         productionOrderId: manualIssueForm.productionOrderId,
         workflowId: manualIssueForm.workflowId,
-        plantId: manualIssueForm.plantId, 
+        plantId: manualIssueForm.plantId,
         items: poBOMItems,
         createdBy: currentUsername
       };
-      await axios.post('${API_URL}/material-issues/manual-issue', payload);
+
+      await axios.post(`${API_URL}/material-issues/manual-issue`, payload);
+
       setIsManualModalOpen(false);
       setManualIssueForm({
-        salesOrderId: '', productionOrderId: '', workflowId: '', plantId: '',
-        issueDate: new Date().toISOString().split('T')[0], items: []
+        salesOrderId: '',
+        productionOrderId: '',
+        workflowId: '',
+        plantId: '',
+        issueDate: new Date().toISOString().split('T')[0],
+        items: []
       });
       setPoBOMItems([]);
       fetchIssues();
-      alert("Material Issue created successfully as Draft!");
+      alert('Material Issue created successfully as Draft!');
     } catch (err) {
-      alert("Save failed. Please check backend connection.");
+      console.error('Manual issue save failed:', err);
+      alert(err.response?.data?.message || 'Save failed. Please check backend connection.');
     } finally {
       setSaving(false);
     }
   };
 
- 
+  // Returns the label, badge style and icon for an issue status
   const getStatusDisplay = (status) => {
-    if (status === 'ISSUED') return { label: 'Fully Issued', style: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: <CheckCircle size={12} /> };
-    if (status === 'Pending Approval') return { label: 'Pending Approval', style: 'bg-amber-50 text-amber-700 border-amber-200', icon: <AlertCircle size={12} /> };
+    if (status === 'ISSUED') {
+      return { label: 'Fully Issued', style: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: <CheckCircle size={12} /> };
+    }
+    if (status === 'Pending Approval') {
+      return { label: 'Pending Approval', style: 'bg-amber-50 text-amber-700 border-amber-200', icon: <AlertCircle size={12} /> };
+    }
     return { label: 'Draft / Pending', style: 'bg-slate-50 text-slate-600 border-slate-200', icon: <AlertCircle size={12} /> };
   };
 
-  const filteredIssues = issuesList.filter(issue => {
+  // Filters the issue list by search text and status
+  const search = searchTerm.toLowerCase();
+  const filteredIssues = toArray(issuesList).filter(issue => {
     const matchesSearch =
-      (issue.issueNo && issue.issueNo.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (issue.salesOrder?.orderRef && issue.salesOrder.orderRef.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (issue.items && issue.items.some(item => item.material?.materialName?.toLowerCase().includes(searchTerm.toLowerCase())));
+      (issue.issueNo && issue.issueNo.toLowerCase().includes(search)) ||
+      (issue.salesOrder?.orderRef && issue.salesOrder.orderRef.toLowerCase().includes(search)) ||
+      (toArray(issue.items).some(item => item.material?.materialName?.toLowerCase().includes(search)));
 
     const statusDisplay = getStatusDisplay(issue.status).label;
     const matchesStatus = statusFilter === 'All' || statusDisplay === statusFilter;
 
     return matchesSearch && matchesStatus;
   });
+
+  // Only completed production orders that have a BOM can be issued
+  const issuableProductionOrders = toArray(productionOrders).filter(
+    po => po.status === 'Completed' && toArray(po.bomItems).length > 0
+  );
 
   if (loading) {
     return (
@@ -198,10 +227,8 @@ const MaterialIssuing = () => {
               {filteredIssues.length > 0 ? filteredIssues.map((issue) => {
                 const statusInfo = getStatusDisplay(issue.status);
                 const issueIdLabel = issue.issueNo || `ISS-${issue._id?.slice(-6).toUpperCase()}`;
-                
-                
                 const plantLabel = issue.plant?.name || issue.plant?.factoryCode || 'N/A';
-                
+
                 return (
                   <tr
                     key={issue._id}
@@ -242,7 +269,7 @@ const MaterialIssuing = () => {
         </div>
       </div>
 
-    
+      {/* MANUAL ISSUE MODAL */}
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl animate-in zoom-in-95 duration-200">
@@ -267,22 +294,20 @@ const MaterialIssuing = () => {
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">Production Order *</label>
                   <select
+                    value={manualIssueForm.productionOrderId}
                     onChange={(e) => handleProductionOrderChange(e.target.value)}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all cursor-pointer"
                   >
                     <option value="">-- Choose Production Order --</option>
-                    {productionOrders
-                      .filter(po => po.status === 'Completed' && po.bomItems && po.bomItems.length > 0)
-                      .map(po => (
-                        <option key={po._id} value={po._id}>
-                          {po.productionOrderNo} {po.salesOrder?.orderRef ? `- ${po.salesOrder.orderRef}` : ''}
-                        </option>
-                      ))}
+                    {issuableProductionOrders.map(po => (
+                      <option key={po._id} value={po._id}>
+                        {po.productionOrderNo} {po.salesOrder?.orderRef ? `- ${po.salesOrder.orderRef}` : ''}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">Plant / Factory *</label>
                 <select
@@ -299,7 +324,6 @@ const MaterialIssuing = () => {
                 </select>
               </div>
 
-              {/* ✅ Workflow selector */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">Approval Workflow *</label>
                 <select
@@ -314,7 +338,7 @@ const MaterialIssuing = () => {
                 </select>
               </div>
 
-              {/* BOM Items preview */}
+              {/* BOM items preview */}
               {poBOMItems.length > 0 && (
                 <div className="border border-slate-100 rounded-xl overflow-hidden">
                   <div className="bg-slate-50 px-4 py-2 border-b border-slate-100">
@@ -347,7 +371,7 @@ const MaterialIssuing = () => {
 
               {manualIssueForm.productionOrderId && poBOMItems.length === 0 && (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-medium">
-                  ⚠️ No BOM items found for this Production Order. Please generate BOM first from the Production Orders module.
+                  No BOM items found for this Production Order. Please generate BOM first from the Production Orders module.
                 </div>
               )}
 
