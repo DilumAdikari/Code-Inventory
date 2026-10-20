@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Check, X, Loader2, Bell, ShieldAlert } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from "../api/config";  
+import { confirmDialog } from '../components/AppDialog';
 
 const Notifications = () => {
   const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -44,7 +45,7 @@ const Notifications = () => {
   }, []);
 
   const handleApprovalAction = async (id, status) => {
-    if (!window.confirm(`Are you sure you want to ${status.toLowerCase()} this request?`)) return;
+    if (!await confirmDialog(`Are you sure you want to ${status.toLowerCase()} this request?`)) return;
     
     try {
       setActionLoading(id);

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, FileText, X, Printer, ArrowLeft, Search, Send, CheckCircle, AlertCircle, Save } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from "../api/config";
+import { confirmDialog } from '../components/AppDialog';
 
 // Returns the value as an array, or an empty array if it is not one
 const toArray = (value) => (Array.isArray(value) ? value : []);
@@ -438,7 +439,7 @@ const InvoiceRegister = () => {
       return;
     }
 
-    if (!window.confirm("Submit this Invoice for approval?")) return;
+    if (!await confirmDialog("Submit this Invoice for approval?")) return;
 
     try {
       setApprovaling(true);

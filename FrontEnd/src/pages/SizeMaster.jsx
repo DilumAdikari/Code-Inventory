@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, Trash2, Edit3, X, Check, Scale } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from "../api/config";
+import { confirmDialog } from '../components/AppDialog';
 
 const SizeMaster = () => {
   const [sizes, setSizes] = useState([]);
@@ -38,7 +39,7 @@ const SizeMaster = () => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to remove this size definition?")) {
+    if (await confirmDialog("Are you sure you want to remove this size definition?")) {
       try {
         await axios.delete(`${API_URL}/sizes/${id}`);
         fetchSizes();

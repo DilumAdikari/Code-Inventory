@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { confirmDialog } from '../components/AppDialog';
 import {
   Loader2,
   Search,
@@ -170,7 +171,7 @@ const ProductionOrders = () => {
 
   // Sends the production order for approval
   const handleSubmitForApproval = async () => {
-    if (!window.confirm('Submit this Production Order for approval?')) return;
+    if (!await confirmDialog('Submit this Production Order for approval?')) return;
 
     try {
       setStatusUpdatingId(selectedOrder._id);
@@ -288,7 +289,7 @@ const ProductionOrders = () => {
       return;
     }
 
-    if (!window.confirm(`Generate Purchase Requisition for ${shortageItems.length} shortage items?`)) return;
+    if (!await confirmDialog(`Generate Purchase Requisition for ${shortageItems.length} shortage items?`)) return;
 
     try {
       setPoGenerating(true);

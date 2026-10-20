@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, ClipboardCheck, X, Check, Printer, ArrowLeft, Search, Send, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import axios from 'axios';
-import { API_URL } from "../api/config";   
+import { API_URL } from "../api/config";  
+import { confirmDialog } from '../components/AppDialog'; 
 
 const GRNRegister = () => {
   const [grnList, setGrnList] = useState([]);
@@ -325,7 +326,7 @@ const GRNRegister = () => {
       return;
     }
 
-    if (!window.confirm("Submit this GRN for approval?")) return;
+    if (!await confirmDialog("Submit this GRN for approval?")) return;
 
     try {
       setSubmitting(true);

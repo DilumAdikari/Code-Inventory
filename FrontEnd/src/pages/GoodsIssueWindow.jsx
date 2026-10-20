@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Loader2, Send, CheckCircle, AlertCircle, Save, Printer } from 'lucide-react';
 import { API_URL } from '../api/config';
+import { confirmDialog } from '../components/AppDialog';
 
 // Returns the value as an array, or an empty array if it is not one
 const toArray = (value) => (Array.isArray(value) ? value : []);
@@ -191,7 +192,7 @@ const GoodsIssueWindow = () => {
       }
     }
 
-    if (!window.confirm('Submit this Material Issue for approval?')) return;
+    if (!await confirmDialog('Submit this Material Issue for approval?')) return;
 
     try {
       setApprovaling(true);

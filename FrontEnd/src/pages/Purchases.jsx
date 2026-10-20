@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Loader2, Search, ShoppingCart, Eye, X, Save, Printer, Send } from 'lucide-react';
 import { API_URL } from "../api/config";   
+import { confirmDialog } from '../components/AppDialog';
 
 const Purchases = () => {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -109,7 +110,7 @@ const Purchases = () => {
       return;
     }
 
-    if (!window.confirm("Submit this Purchase Order for approval?")) return;
+    if (!await confirmDialog("Submit this Purchase Order for approval?")) return;
 
     try {
       setSubmittingApproval(true);
@@ -150,7 +151,7 @@ const Purchases = () => {
   };
 
   const handleCancelOrder = async (poId) => {
-    if (!window.confirm("Are you sure you want to cancel this order?")) return;
+    if (!await confirmDialog("Are you sure you want to cancel this order?")) return;
     try {
       const res = await axios.put(
         `${API_URL}/purchases/${poId}/status`,

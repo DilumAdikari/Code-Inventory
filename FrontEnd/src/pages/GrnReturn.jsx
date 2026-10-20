@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { RotateCcw, Loader2, Plus, X, Save, ArrowLeft, CheckCircle2, Printer } from 'lucide-react';
 import { API_URL } from "../api/config";
+import { confirmDialog } from '../components/AppDialog';
 
 const GrnReturn = () => {
   const [returnsList, setReturnsList] = useState([]);
@@ -189,7 +190,7 @@ const GrnReturn = () => {
       }
     }
 
-    if (!window.confirm("Are you sure you want to submit this return for approval?")) return;
+    if (!await confirmDialog("Are you sure you want to submit this return for approval?")) return;
 
     try {
       setSubmitting(true);

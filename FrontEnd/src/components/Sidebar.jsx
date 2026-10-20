@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { confirmDialog } from './AppDialog';
 import { 
   LayoutDashboard, Bell, FileText, DollarSign, Truck, FileClock, 
   Database, Settings, ChevronDown, Palette, Scale, Building2, LogOut, GitBranch, Users, Warehouse,
@@ -49,8 +50,8 @@ const Sidebar = () => {
     { icon: <Warehouse size={20} />, label: 'Live Stock Ledger', path: '/stock-overview', permissionKey: 'stockOverview' },
   ];
 
-  const handleLogout = () => {
-    if (window.confirm("Are you sure you want to log out from the system?")) {
+  const handleLogout = async () => {
+    if (await confirmDialog("Are you sure you want to log out from the system?")) {
       localStorage.clear(); 
       navigate('/login'); 
     }

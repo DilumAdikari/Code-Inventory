@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Check, Loader2, ArrowLeft, GitBranch, ListFilter, X } from 'lucide-react'; // 🌟 ✅ මෙන්න මෙතනට 'X' අයිකන් එක නිවැරදිව එකතු කළා!
 import axios from 'axios';
+import { confirmDialog } from '../components/AppDialog';
 import { API_URL } from "../api/config";
 
 const WorkflowRegistry = () => {
@@ -90,7 +91,7 @@ const WorkflowRegistry = () => {
   };
 
   const handleDeleteWorkflow = async (wfId) => {
-    if (!window.confirm("Are you sure you want to completely remove this workflow template?")) return;
+    if (!await confirmDialog("Are you sure you want to completely remove this workflow template?")) return;
     try {
       await axios.delete(`${API_URL}/workflows/${wfId}`);
       loadData();
