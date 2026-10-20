@@ -24,11 +24,27 @@ const formatDate = (value) => {
   return isNaN(date) ? '-' : date.toISOString().split('T')[0];
 };
 
+// Returns the display label for a size (sizeCode first, then description).
+// Falls back to the raw value only when no matching size is found.
+const getSizeLabel = (size, sizeList) => {
+  if (!size) return '-';
+
+  // Size may already be populated as an object from the backend
+  if (typeof size === 'object') {
+    return size.sizeCode || size.sizeDescription || size._id || '-';
+  }
+
+  const found = sizeList.find(s => String(s._id) === String(size));
+  if (!found) return size;
+  return found.sizeCode || found.sizeDescription || size;
+};
+
 const ProductionOrders = () => {
   const [orders, setOrders] = useState([]);
   const [salesOrders, setSalesOrders] = useState([]);
   const [costings, setCostings] = useState([]);
   const [workflows, setWorkflows] = useState([]);
+  const [sizes, setSizes] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -56,16 +72,21 @@ const ProductionOrders = () => {
   // Loads every list this page needs from the server
   const fetchData = async () => {
     try {
-      const [poRes, soRes, costingRes, wfRes] = await Promise.all([
+      const [poRes, soRes, costingRes, wfRes, sizeRes] = await Promise.all([
         axios.get(`${API_URL}/production-orders`),
         axios.get(`${API_URL}/sales-orders`),
         axios.get(`${API_URL}/costing`),
-        axios.get(`${API_URL}/workflows`)
+        axios.get(`${API_URL}/workflows`),
+        axios.get(`${API_URL}/sizes`).catch(() => ({ data: [] }))
       ]);
       setOrders(toArray(poRes.data));
       setSalesOrders(toArray(soRes.data));
       setCostings(toArray(costingRes.data));
       setWorkflows(toArray(wfRes.data));
+
+      // Sizes may come back as a plain array or wrapped in an object
+      const rawSizes = sizeRes.data;
+      setSizes(Array.isArray(rawSizes) ? rawSizes : toArray(rawSizes?.data || rawSizes?.sizes));
       setLoading(false);
     } catch (err) {
       console.error('Error loading production registry:', err);
@@ -74,6 +95,9 @@ const ProductionOrders = () => {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // Shortcut to get the display label for a size value
+  const getSize = (size) => getSizeLabel(size, sizes);
 
   // Builds the garment size/quantity list from the selected sales order
   const handleSalesOrderChange = async (soId) => {
@@ -516,7 +540,7 @@ const ProductionOrders = () => {
                           <td className="p-3.5 font-mono text-slate-600 text-base">{selectedOrder.salesOrder?.orderRef || 'SKU'}</td>
                           <td className="p-3.5 text-base">{selectedOrder.salesOrder?.buyerName || 'Garment Fabrication'} Run</td>
                           <td className="p-3.5 text-slate-500 text-base">Bulk</td>
-                          <td className="p-3.5 text-center text-slate-900 font-mono text-base">{g.size}</td>
+                          <td className="p-3.5 text-center text-slate-900 font-mono text-base">{getSize(g.size)}</td>
                           <td className="p-3.5 text-right text-base">{Number(g.orderQty || 0).toLocaleString()}</td>
                           <td className="p-3.5 text-right text-slate-300 text-base">-</td>
                           <td className="p-3.5 text-center text-sm text-emerald-800">
@@ -701,7 +725,7 @@ const ProductionOrders = () => {
                   <div className="flex gap-2 flex-wrap">
                     {loadedGarmentQuantities.map((q, idx) => (
                       <span key={idx} className="px-3 py-1.5 bg-white border border-slate-200 font-mono rounded text-slate-800 text-sm font-normal">
-                        {q.size}: {Number(q.orderQty !== undefined ? q.orderQty : q.quantity || q.qty || 0).toLocaleString()} Pcs
+                        {getSize(q.size)}: {Number(q.orderQty !== undefined ? q.orderQty : q.quantity || q.qty || 0).toLocaleString()} Pcs
                       </span>
                     ))}
                   </div>
