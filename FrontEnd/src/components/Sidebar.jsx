@@ -1,38 +1,70 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { API_URL } from '../api/config';
 import { confirmDialog } from './AppDialog';
-import { 
-  LayoutDashboard, Bell, FileText, DollarSign, Truck, FileClock, 
+import {
+  LayoutDashboard, Bell, FileText, DollarSign, Truck, FileClock,
   Database, Settings, ChevronDown, Palette, Scale, Building2, LogOut, GitBranch, Users, Warehouse,
-  ClipboardList, 
-  UserCheck, 
+  ClipboardList,
+  UserCheck,
   Shirt,
   ShoppingCart,
   Tag,
-  FileBarChart, 
-  RotateCcw,    
-  PackageMinus  
+  FileBarChart,
+  RotateCcw,
+  PackageMinus
 } from 'lucide-react';
+
+const PENDING_REFRESH_MS = 30000;
 
 const Sidebar = () => {
   const location = useLocation();
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPartnersOpen, setIsPartnersOpen] = useState(false);
-  const [isMaterialsOpen, setIsMaterialsOpen] = useState(false); 
-  const [isReportsOpen, setIsReportsOpen] = useState(false); 
+  const [isMaterialsOpen, setIsMaterialsOpen] = useState(false);
+  const [isReportsOpen, setIsReportsOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const storedPermissions = JSON.parse(localStorage.getItem('userPermissions') || '{}');
   const userRole = localStorage.getItem('userRole');
 
+  // Number of approvals waiting for the logged-in user
+  const fetchPendingCount = useCallback(async () => {
+    const username = (localStorage.getItem('username') || '').trim().toUpperCase();
+    if (!username) {
+      setPendingCount(0);
+      return;
+    }
+
+    try {
+      const res = await axios.get(`${API_URL}/approvals/pending`, { params: { username } });
+      setPendingCount(Array.isArray(res.data) ? res.data.length : 0);
+    } catch (err) {
+      setPendingCount(0);
+    }
+  }, []);
+
+  // Refreshes the count on load, every 30 seconds, and after any approval action
+  useEffect(() => {
+    fetchPendingCount();
+    const timer = setInterval(fetchPendingCount, PENDING_REFRESH_MS);
+    window.addEventListener('approvals:changed', fetchPendingCount);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('approvals:changed', fetchPendingCount);
+    };
+  }, [fetchPendingCount]);
+
   const hasAccess = (moduleName) => {
-    if (userRole === 'Admin') return true; 
-    if (moduleName === 'notifications') return true; 
-    if (moduleName === 'stockOverview') return true; 
+    if (userRole === 'Admin') return true;
+    if (moduleName === 'notifications') return true;
+    if (moduleName === 'stockOverview') return true;
     return !!storedPermissions[moduleName];
   };
 
-  
   const hasAnyReportAccess = hasAccess('grnHistory') || hasAccess('materialIssuing');
 
   const menuItems = [
@@ -45,15 +77,14 @@ const Sidebar = () => {
     { icon: <Truck size={20} />, label: 'Material Issuing', path: '/material-issuing', permissionKey: 'materialIssuing' },
     { icon: <FileText size={20} />, label: 'Sales Invoices', path: '/invoices', permissionKey: 'materialIssuing' },
     { icon: <FileClock size={20} />, label: 'GRN History', path: '/grn-history', permissionKey: 'grnHistory' },
-
     { icon: <RotateCcw size={20} />, label: 'GRN Return', path: '/grn-return', permissionKey: 'grnHistory' },
     { icon: <Warehouse size={20} />, label: 'Live Stock Ledger', path: '/stock-overview', permissionKey: 'stockOverview' },
   ];
 
   const handleLogout = async () => {
     if (await confirmDialog("Are you sure you want to log out from the system?")) {
-      localStorage.clear(); 
-      navigate('/login'); 
+      localStorage.clear();
+      navigate('/login');
     }
   };
 
@@ -61,15 +92,15 @@ const Sidebar = () => {
     if (current !== 'materials') setIsMaterialsOpen(false);
     if (current !== 'partners') setIsPartnersOpen(false);
     if (current !== 'settings') setIsSettingsOpen(false);
-    if (current !== 'reports') setIsReportsOpen(false); 
+    if (current !== 'reports') setIsReportsOpen(false);
   };
 
   return (
     <div className="h-screen bg-emerald-900 shadow-xl w-20 hover:w-64 transition-all duration-300 ease-in-out z-50 shrink-0 flex flex-col group justify-between sticky top-0 left-0 overflow-hidden select-none">
-      
+
       {/* UPPER MAIN NAVIGATION BLOCK */}
       <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-        
+
         {/* LOGO */}
         <div className="flex items-center h-20 px-6 border-b border-emerald-800/60 overflow-hidden shrink-0 w-full bg-emerald-900 sticky top-0 z-10">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-white text-emerald-900 font-bold shrink-0">E</div>
@@ -82,6 +113,8 @@ const Sidebar = () => {
           {menuItems.map((item, index) => {
             if (!hasAccess(item.permissionKey)) return null;
 
+            const isNotifications = item.path === '/notifications';
+
             return (
               <NavLink
                 key={index}
@@ -90,8 +123,18 @@ const Sidebar = () => {
                 className={({ isActive }) => `flex items-center w-full px-3 py-3 rounded-xl transition-all duration-200 text-left overflow-hidden
                   ${isActive ? 'bg-emerald-950 text-white font-semibold' : 'text-white/90 hover:bg-emerald-800'}`}
               >
-                <div className="shrink-0">{item.icon}</div>
+                <div className="shrink-0 relative">
+                  {item.icon}
+                  {isNotifications && pendingCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-emerald-900" />
+                  )}
+                </div>
                 <span className="ml-4 font-medium text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">{item.label}</span>
+                {isNotifications && pendingCount > 0 && (
+                  <span className="ml-auto min-w-[20px] px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold text-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    {pendingCount}
+                  </span>
+                )}
               </NavLink>
             );
           })}
@@ -143,7 +186,7 @@ const Sidebar = () => {
             </div>
           )}
 
-          {/*  REPORTS DROPDOWN (GRN Report + Goods Issue Report) */}
+          {/* REPORTS DROPDOWN (GRN Report + Goods Issue Report) */}
           {hasAnyReportAccess && (
             <div className="space-y-1 w-full">
               <button
@@ -157,7 +200,7 @@ const Sidebar = () => {
                 </div>
                 <ChevronDown size={16} className={`opacity-0 group-hover:opacity-100 transition-transform duration-200 ${isReportsOpen ? 'rotate-180' : ''}`} />
               </button>
-              
+
               {isReportsOpen && (
                 <div className="pl-4 space-y-1 group-hover:block hidden animate-in slide-in-from-top-2 duration-150">
                   {hasAccess('grnHistory') && (
