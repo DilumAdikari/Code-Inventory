@@ -48,33 +48,55 @@ const getStatusStyle = (status) => {
   return 'bg-slate-50 text-slate-600 border-slate-200';
 };
 
-// Groups the sales order items by colour and sums the quantity per colour.
-// Items without a colour are grouped under a single "Standard Shade" entry.
-const buildColorGroups = (order) => {
-  const items = order?.salesOrder?.items || [];
-  const groupMap = {};
+// Returns the ID of a colour / size value (populated object or raw ID)
+const idOf = (value) => (value && typeof value === 'object' ? value._id : value);
+
+// Groups the sales order items by colour and size, with the garment qty for each pair.
+const buildVariantGroups = (items) => {
+  const map = {};
 
   items.forEach(item => {
-    const colorId = item.color && typeof item.color === 'object' ? item.color._id : item.color;
-    const key = colorId ? String(colorId) : 'NO_COLOR';
-    const qty = Number(item.quantity || item.qty || 0);
+    const colorId = idOf(item.color) || null;
+    const size = idOf(item.size) || null;
+    const key = `${colorId ? String(colorId) : 'NO_COLOR'}|${size ? String(size) : 'NO_SIZE'}`;
 
-    if (!groupMap[key]) {
-      groupMap[key] = { colorId: colorId || null, qty: 0 };
+    if (!map[key]) {
+      map[key] = { colorId, size, qty: 0 };
     }
-    groupMap[key].qty += qty;
+    map[key].qty += Number(item.quantity || item.qty || 0);
   });
 
-  return Object.values(groupMap);
+  return Object.values(map);
 };
 
-// Groups saved BOM rows by colour so the BOM tab can show one block per colour
+// Re-groups the variant groups for one material.
+// Dimensions the material does not use (no colours / no sizes) are merged together.
+const aggregateVariantGroups = (groups, useColor, useSize) => {
+  const map = {};
+
+  groups.forEach(g => {
+    const colorId = useColor ? (g.colorId || null) : null;
+    const size = useSize ? (g.size || null) : null;
+    const key = `${colorId ? String(colorId) : 'NO_COLOR'}|${size ? String(size) : 'NO_SIZE'}`;
+
+    if (!map[key]) {
+      map[key] = { colorId, size, qty: 0 };
+    }
+    map[key].qty += Number(g.qty || 0);
+  });
+
+  return Object.values(map);
+};
+
+// Groups saved BOM rows by colour and size so the BOM tab can show one block per combination
 const groupBOMByColor = (rows) => {
   const groups = {};
   rows.forEach(row => {
-    const key = row.colorName || 'Standard Shade';
+    const colourName = row.colorName || 'Standard Shade';
+    const sizeName = row.sizeName || 'Common (no size)';
+    const key = `${colourName}|${sizeName}`;
     if (!groups[key]) {
-      groups[key] = { colorName: key, colorQty: Number(row.colorQty || 0), rows: [] };
+      groups[key] = { colorName: colourName, sizeName, colorQty: Number(row.colorQty || 0), rows: [] };
     }
     groups[key].rows.push(row);
   });
@@ -185,6 +207,23 @@ const ProductionOrders = () => {
     if (flags) return flags.hasColors;
     if (materialObj && Array.isArray(materialObj.colors)) return materialObj.colors.length > 0;
     return true;
+  };
+
+  // True when the material has sizes. Empty sizes[] means sizeless.
+  const materialHasSizes = (materialId, materialObj) => {
+    const flags = materialVariants[String(materialId)];
+    if (flags) return flags.hasSizes;
+    if (materialObj && Array.isArray(materialObj.sizes)) return materialObj.sizes.length > 0;
+    return true;
+  };
+
+  // Returns the full sales order items (colour, size, quantity) for a production order.
+  // The production order's populated salesOrder can miss item fields, so the full
+  // sales order from the sales order list is used when it is available.
+  const getSalesOrderItems = (order) => {
+    const soId = idOf(order?.salesOrder);
+    const fullSo = salesOrders.find(s => String(s._id) === String(soId));
+    return fullSo?.items || order?.salesOrder?.items || [];
   };
 
   // Builds the garment size/quantity list from the selected sales order
@@ -301,14 +340,15 @@ const ProductionOrders = () => {
       const costingData = res.data;
       const costingItems = costingData.items || costingData.materials || [];
 
-      // One group per colour, with the total garment qty for that colour
-      let colorGroups = buildColorGroups(orderObj);
-      if (colorGroups.length === 0) {
-        // Fallback when there are no sales order items: one generic group
-        const fallbackQty = (orderObj.garmentQuantities || []).reduce(
-          (sum, item) => sum + (Number(item.orderQty) || 0), 0
-        );
-        colorGroups = [{ colorId: null, qty: fallbackQty }];
+      // Garment qty per colour + size from the sales order
+      let variantGroups = buildVariantGroups(getSalesOrderItems(orderObj));
+      if (variantGroups.length === 0) {
+        // Fallback when there are no sales order items: use the production order size list
+        variantGroups = (orderObj.garmentQuantities || []).map(q => ({
+          colorId: null,
+          size: idOf(q.size) || null,
+          qty: Number(q.orderQty) || 0
+        }));
       }
 
       // Fetch stock once for all materials
@@ -316,34 +356,36 @@ const ProductionOrders = () => {
       const stockList = toArray(stockRes.data);
 
       const calculatedShortageBOM = [];
-      const totalGarmentQty = colorGroups.reduce((sum, g) => sum + g.qty, 0);
 
       costingItems.forEach(cItem => {
         const materialObj = cItem.material && typeof cItem.material === 'object' ? cItem.material : null;
         const materialId = materialObj ? materialObj._id : cItem.material;
         const hasColors = materialHasColors(materialId, materialObj);
+        const hasSizes = materialHasSizes(materialId, materialObj);
 
         const consumption = Number(cItem.consumption !== undefined ? cItem.consumption : cItem.yield || 0);
         const wastage = Number(cItem.wastagePercentage !== undefined ? cItem.wastagePercentage : 0);
 
-        // Coloured material: one row per colour.
-        // Colourless material (e.g. Glue): one common row for all garments.
-        const targets = hasColors
-          ? colorGroups
-          : [{ colorId: null, qty: totalGarmentQty }];
+        // One row per colour and/or size the material uses.
+        // A colourless (or sizeless) material gets one common row for that dimension.
+        const targets = aggregateVariantGroups(variantGroups, hasColors, hasSizes);
 
         targets.forEach(group => {
           const totalRequired = group.qty * consumption * (1 + (wastage / 100));
 
-          // Stock must match the material, and the colour when the material has colours.
-          // Colourless stock is stored with colour = null.
+          // Stock must match the material, and the colour / size when the material uses them.
+          // Colourless or sizeless stock is stored with colour / size = null.
           const currentStockObj = stockList.find(s => {
-            const sMatId = s.material && typeof s.material === 'object' ? s.material._id : s.material;
-            const sColId = s.color && typeof s.color === 'object' ? s.color._id : s.color;
+            const sMatId = idOf(s.material);
+            const sColId = idOf(s.color) || null;
+            const sSizeId = idOf(s.size) || null;
             const colourMatches = hasColors
-              ? String(sColId) === String(group.colorId)
+              ? String(sColId) === String(idOf(group.colorId))
               : !sColId;
-            return String(sMatId) === String(materialId) && colourMatches;
+            const sizeMatches = hasSizes
+              ? String(sSizeId) === String(idOf(group.size))
+              : !sSizeId;
+            return String(sMatId) === String(materialId) && colourMatches && sizeMatches;
           });
 
           const availableStock = currentStockObj ? Number(currentStockObj.qty || currentStockObj.quantity || 0) : 0;
@@ -351,8 +393,10 @@ const ProductionOrders = () => {
 
           calculatedShortageBOM.push({
             material: materialId,
-            color: hasColors ? group.colorId : null,
+            color: hasColors ? (idOf(group.colorId) || null) : null,
             colorName: hasColors ? getColorLabel(group.colorId) : 'Common (no colour)',
+            size: hasSizes ? (idOf(group.size) || null) : null,
+            sizeName: hasSizes ? getSizeLabel(group.size, sizes) : 'Common (no size)',
             colorQty: group.qty,
             materialName: materialObj?.materialName || cItem.materialName || 'Component Material',
             itemCode: materialObj?.itemCode || cItem.itemCode || 'MAT',
@@ -433,6 +477,7 @@ const ProductionOrders = () => {
         materialName: b.materialName || 'Component Material',
         itemCode: b.itemCode || 'MAT',
         colorName: b.colorName || 'Standard Shade',
+        sizeName: b.sizeName || 'Common (no size)',
         colorQty: Number(b.colorQty) || 0,
         uom: b.uom || 'Pcs',
         consumption: Number(b.consumption) || 0,
@@ -471,7 +516,7 @@ const ProductionOrders = () => {
   const resolvedGarmentsList = selectedOrder
     ? ((selectedOrder.garmentQuantities && selectedOrder.garmentQuantities.length > 0)
         ? selectedOrder.garmentQuantities
-        : (selectedOrder.salesOrder?.items || []).reduce((acc, curr) => {
+        : getSalesOrderItems(selectedOrder).reduce((acc, curr) => {
             const existing = acc.find(item => item.size === curr.size);
             if (existing) {
               existing.orderQty += Number(curr.quantity || curr.qty || 0);
@@ -738,7 +783,7 @@ const ProductionOrders = () => {
                 {bomColorGroups.map((group, gIdx) => (
                   <div key={gIdx} className="border border-slate-100 bg-white rounded-xl overflow-hidden w-full">
                     <div className="px-4 py-3 bg-slate-50/75 border-b border-slate-100 flex justify-between items-center">
-                      <span className="text-sm font-semibold text-slate-900">Colour: {group.colorName}</span>
+                      <span className="text-sm font-semibold text-slate-900">Colour: {group.colorName} · Size: {group.sizeName}</span>
                       <span className="text-sm text-slate-600 font-mono">Garment Qty: {Number(group.colorQty).toLocaleString()} Pcs</span>
                     </div>
                     <table className="w-full text-left border-collapse">

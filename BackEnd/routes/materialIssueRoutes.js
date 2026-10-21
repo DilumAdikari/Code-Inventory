@@ -6,6 +6,12 @@ const Stock = require('../models/Stock');
 const Approval = require('../models/Approval');
 const Workflow = require('../models/Workflow');
 
+// Converts a value to an ObjectId, or null when it is empty or invalid
+const toObjectIdOrNull = (value) => {
+  const raw = value?._id || value;
+  return mongoose.Types.ObjectId.isValid(raw) ? new mongoose.Types.ObjectId(raw) : null;
+};
+
 const getApproverFromWorkflow = async (workflowId) => {
   if (!workflowId) return null;
   const wfDoc = await Workflow.findById(workflowId)
@@ -28,22 +34,59 @@ const getApproverFromWorkflow = async (workflowId) => {
   return null;
 };
 
+// Stock rows that belong to one issue row (material + colour + size + warehouse).
+// Colourless / sizeless rows match only stock stored with null colour / size.
+const stockQueryFor = (item, warehouse) => ({
+  material: item.material,
+  color: item.color || null,
+  size: item.size || null,
+  warehouse
+});
+
+// Short label for error messages
+const itemLabel = async (item) => {
+  const mat = await mongoose.model('Material').findById(item.material).select('itemCode materialName').lean();
+  return mat ? `${mat.itemCode || 'MAT'} ${mat.materialName || ''}`.trim() : 'material';
+};
+
+// Checks that every row has enough stock. Returns an error message, or null when all rows are fine.
+const checkStockForIssue = async (issue) => {
+  for (const item of issue.items || []) {
+    const needed = Number(item.issuedQty || 0);
+    if (needed <= 0) continue;
+
+    const rows = await Stock.find(stockQueryFor(item, issue.warehouse)).lean();
+    const available = rows.reduce((total, r) => total + Number(r.qty || 0), 0);
+
+    if (available < needed) {
+      const label = await itemLabel(item);
+      return `Insufficient stock for ${label}. Available: ${available}, Issue Qty: ${needed}.`;
+    }
+  }
+  return null;
+};
+
+// Deducts the issued qty from the matching stock rows (oldest first).
+// Throws when the stock is not enough, so stock never goes negative.
 const deductStockForIssue = async (issue) => {
-  if (!issue.items || issue.items.length === 0) return;
-  for (let item of issue.items) {
-    if (item.material && issue.warehouse) {
-      const issuedQty = Number(item.issuedQty || item.allocatedQty || 0);
-      if (issuedQty > 0) {
-        await Stock.findOneAndUpdate(
-          {
-            material: item.material,
-            color: item.color || null,
-            warehouse: issue.warehouse
-          },
-          { $inc: { qty: -issuedQty } },
-          { new: true }
-        );
-      }
+  for (const item of issue.items || []) {
+    let remaining = Number(item.issuedQty || 0);
+    if (remaining <= 0) continue;
+
+    const rows = await Stock.find(stockQueryFor(item, issue.warehouse)).sort({ _id: 1 });
+    for (const row of rows) {
+      if (remaining <= 0) break;
+      const take = Math.min(Number(row.qty || 0), remaining);
+      if (take <= 0) continue;
+
+      row.qty = Number(row.qty || 0) - take;
+      await row.save();
+      remaining -= take;
+    }
+
+    if (remaining > 0) {
+      const label = await itemLabel(item);
+      throw new Error(`Insufficient stock for ${label} while issuing.`);
     }
   }
 };
@@ -55,10 +98,11 @@ router.get('/', async (req, res) => {
       .populate({ path: 'salesOrder', select: 'orderRef buyerName' })
       .populate({ path: 'productionOrder', select: 'productionOrderNo' })
       .populate({ path: 'warehouse', select: 'warehouseName warehouseCode' })
-      .populate({ path: 'plant', model: 'Factory', select: 'name factoryCode location' }) // 🌟 model: 'Factory' එකතු කර ඇත[cite: 7]
+      .populate({ path: 'plant', model: 'Factory', select: 'name factoryCode location' })
       .populate({ path: 'workflow', select: 'code' })
       .populate({ path: 'items.material', select: 'materialName itemCode' })
       .populate({ path: 'items.color', select: 'name colorName code' })
+      .populate({ path: 'items.size', select: 'sizeCode sizeDescription' })
       .sort({ createdAt: -1 });
     res.json(issues);
   } catch (err) {
@@ -92,9 +136,6 @@ router.post('/manual-issue', async (req, res) => {
     const defaultWarehouse = await mongoose.model('Warehouse').findOne();
     const warehouseId = defaultWarehouse ? defaultWarehouse._id : null;
 
-    const defaultColor = await mongoose.model('Color').findOne();
-    const fallbackColorId = defaultColor ? defaultColor._id : null;
-
     let savedIssue = null;
     let attempts = 0;
 
@@ -110,14 +151,19 @@ router.post('/manual-issue', async (req, res) => {
         }
         const generatedIssueNo = `ISS-${String(nextNo).padStart(5, '0')}`;
 
-        const formattedItems = (items || []).map(item => ({
-          material: item.material?._id || item.material,
-          color: item.color?._id || item.color || fallbackColorId,
-          uom: item.uom || 'Pcs',
-          allocatedQty: Number(item.requiredQty || item.qty || 0),
-          issuedQty: Number(item.requiredQty || item.qty || 0),
-          value: Number(item.value || 0)
-        }));
+        // Colourless / sizeless rows keep colour / size as null (no fallback colour)
+        const formattedItems = (items || []).map(item => {
+          const qty = Number(item.requiredQty || item.qty || 0);
+          return {
+            material: toObjectIdOrNull(item.material) || item.material,
+            color: toObjectIdOrNull(item.color),
+            size: toObjectIdOrNull(item.size),
+            uom: item.uom || 'Pcs',
+            allocatedQty: qty,
+            issuedQty: qty,
+            value: Number(item.value || 0)
+          };
+        });
 
         const newMaterialIssue = new MaterialIssue({
           issueNo: generatedIssueNo,
@@ -162,6 +208,14 @@ router.post('/submit-approval/:id', async (req, res) => {
 
     if (!issue) return res.status(404).json({ message: "Material Issue not found." });
 
+    if (!issue.workflow) {
+      return res.status(400).json({ message: "No workflow assigned to this issue." });
+    }
+
+    // Stock must cover every row before the issue goes for approval
+    const stockError = await checkStockForIssue(issue);
+    if (stockError) return res.status(400).json({ message: stockError });
+
     const targetApprover = await getApproverFromWorkflow(issue.workflow._id || issue.workflow);
     if (!targetApprover) {
       return res.status(400).json({ message: "No valid approver found in workflow." });
@@ -198,23 +252,30 @@ router.put('/finalize/:id', async (req, res) => {
     if (!issue) return res.status(404).json({ message: 'Issuing record not found' });
 
     if (warehouse) {
-      issue.warehouse = mongoose.Types.ObjectId.isValid(warehouse)
-        ? new mongoose.Types.ObjectId(warehouse)
-        : warehouse;
+      issue.warehouse = toObjectIdOrNull(warehouse) || warehouse;
+    }
+
+    // Check stock first, then deduct, then mark the issue as ISSUED
+    const stockError = await checkStockForIssue(issue);
+    if (stockError) return res.status(400).json({ message: stockError });
+
+    try {
+      await deductStockForIssue(issue);
+    } catch (deductErr) {
+      return res.status(400).json({ message: deductErr.message });
     }
 
     issue.status = 'ISSUED';
     await issue.save();
 
-    await deductStockForIssue(issue);
-
     const updatedIssue = await MaterialIssue.findById(issue._id)
       .populate({ path: 'salesOrder', select: 'orderRef buyerName' })
       .populate({ path: 'productionOrder', select: 'productionOrderNo' })
       .populate({ path: 'warehouse', select: 'warehouseName' })
-      .populate({ path: 'plant', model: 'Factory', select: 'name factoryCode location' }) // 🌟 model: 'Factory' එකතු කර ඇත[cite: 7]
+      .populate({ path: 'plant', model: 'Factory', select: 'name factoryCode location' })
       .populate({ path: 'items.material', select: 'materialName itemCode' })
-      .populate({ path: 'items.color', select: 'name colorName code' });
+      .populate({ path: 'items.color', select: 'name colorName code' })
+      .populate({ path: 'items.size', select: 'sizeCode sizeDescription' });
 
     res.json(updatedIssue);
   } catch (err) {
@@ -230,9 +291,9 @@ router.put('/update-plant/:id', async (req, res) => {
 
     const updated = await MaterialIssue.findByIdAndUpdate(
       req.params.id,
-      { plant: mongoose.Types.ObjectId.isValid(plantId) ? new mongoose.Types.ObjectId(plantId) : plantId },
+      { plant: toObjectIdOrNull(plantId) || plantId },
       { new: true }
-    ).populate({ path: 'plant', model: 'Factory', select: 'name factoryCode location' }); //[cite: 7]
+    ).populate({ path: 'plant', model: 'Factory', select: 'name factoryCode location' });
 
     if (!updated) return res.status(404).json({ message: 'Issue not found' });
     res.json(updated);
@@ -247,14 +308,14 @@ router.put('/update-items/:id', async (req, res) => {
   try {
     const updateData = {};
     if (warehouse) {
-      updateData.warehouse = mongoose.Types.ObjectId.isValid(warehouse)
-        ? new mongoose.Types.ObjectId(warehouse)
-        : warehouse;
+      updateData.warehouse = toObjectIdOrNull(warehouse) || warehouse;
     }
     if (items && items.length > 0) {
       updateData.items = items.map(item => ({
-        material: mongoose.Types.ObjectId.isValid(item.material) ? new mongoose.Types.ObjectId(item.material) : item.material,
-        color: mongoose.Types.ObjectId.isValid(item.color) ? new mongoose.Types.ObjectId(item.color) : item.color,
+        material: toObjectIdOrNull(item.material) || item.material,
+        // Colourless / sizeless rows are saved with null colour / size
+        color: toObjectIdOrNull(item.color),
+        size: toObjectIdOrNull(item.size),
         uom: item.uom || 'Pcs',
         allocatedQty: Number(item.allocatedQty || 0),
         issuedQty: Number(item.issuedQty || 0),

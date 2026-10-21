@@ -8,6 +8,9 @@ import { confirmDialog } from '../components/AppDialog';
 // Returns the value as an array, or an empty array if it is not one
 const toArray = (value) => (Array.isArray(value) ? value : []);
 
+// Returns the ID of a populated object or a raw ID
+const idOf = (value) => (value && typeof value === 'object' ? value._id : value);
+
 // Formats a date as YYYY-MM-DD, or '-' if the value is missing or invalid
 const formatDate = (value) => {
   const date = new Date(value);
@@ -19,9 +22,19 @@ const getColorName = (color, colorList) => {
   if (color && typeof color === 'object' && (color.name || color.colorName)) {
     return color.name || color.colorName;
   }
-  const id = String(color?._id || color || '');
+  const id = String(idOf(color) || '');
   const found = toArray(colorList).find(c => String(c._id) === id);
   return found?.name || found?.colorName || '-';
+};
+
+// Returns the size label (sizeCode first, then description) for a size value
+const getSizeName = (size, sizeList) => {
+  if (size && typeof size === 'object' && (size.sizeCode || size.sizeDescription)) {
+    return size.sizeCode || size.sizeDescription;
+  }
+  const id = String(idOf(size) || '');
+  const found = toArray(sizeList).find(s => String(s._id) === id);
+  return found?.sizeCode || found?.sizeDescription || '-';
 };
 
 const GoodsIssueWindow = () => {
@@ -45,13 +58,14 @@ const GoodsIssueWindow = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [issueRes, whRes, stockRes, costingRes, poRes, colorRes, matRes] = await Promise.all([
+        const [issueRes, whRes, stockRes, costingRes, poRes, colorRes, sizeRes, matRes] = await Promise.all([
           axios.get(`${API_URL}/material-issues`),
           axios.get(`${API_URL}/warehouses`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/stocks`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/costing`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/production-orders`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/colors`).catch(() => ({ data: [] })),
+          axios.get(`${API_URL}/sizes`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/materials`).catch(() => ({ data: [] }))
         ]);
 
@@ -59,35 +73,39 @@ const GoodsIssueWindow = () => {
         const costings = toArray(costingRes.data);
         const productionOrders = toArray(poRes.data);
         const colorList = toArray(colorRes.data);
+        const rawSizes = sizeRes.data;
+        const sizeList = Array.isArray(rawSizes) ? rawSizes : toArray(rawSizes?.data || rawSizes?.sizes);
 
-        // Colourless material = empty colors[] on the material master
+        // Colourless / sizeless = empty colors[] / sizes[] on the material master
+        const materialList = toArray(matRes.data);
         const colourlessIds = new Set(
-          toArray(matRes.data)
-            .filter(m => toArray(m.colors).length === 0)
-            .map(m => String(m._id))
+          materialList.filter(m => toArray(m.colors).length === 0).map(m => String(m._id))
+        );
+        const sizelessIds = new Set(
+          materialList.filter(m => toArray(m.sizes).length === 0).map(m => String(m._id))
         );
 
         const currentIssue = issues.find(i => String(i._id) === String(id));
         setIssueData(currentIssue || null);
 
         if (currentIssue?.warehouse) {
-          setSelectedWarehouse(currentIssue.warehouse._id || currentIssue.warehouse);
+          setSelectedWarehouse(idOf(currentIssue.warehouse) || '');
         }
 
         // Find the costing linked to this issue, to show its CM cost
         if (currentIssue) {
           let matchedCosting = null;
-          const poId = currentIssue.productionOrder?._id || currentIssue.productionOrder;
-          const soId = currentIssue.salesOrder?._id || currentIssue.salesOrder;
+          const poId = idOf(currentIssue.productionOrder);
+          const soId = idOf(currentIssue.salesOrder);
 
           // 1. Match through the production order
           if (poId) {
             const currentPo = productionOrders.find(p => String(p._id) === String(poId));
-            const poSoId = currentPo?.salesOrder?._id || currentPo?.salesOrder;
+            const poSoId = idOf(currentPo?.salesOrder);
 
             matchedCosting = costings.find(c => {
-              const cPoId = c.productionOrder?._id || c.productionOrder;
-              const cSoId = c.salesOrder?._id || c.salesOrder;
+              const cPoId = idOf(c.productionOrder);
+              const cSoId = idOf(c.salesOrder);
               return (cPoId && String(cPoId) === String(poId)) || (poSoId && cSoId && String(cSoId) === String(poSoId));
             });
           }
@@ -95,7 +113,7 @@ const GoodsIssueWindow = () => {
           // 2. Fall back to matching through the sales order
           if (!matchedCosting && soId) {
             matchedCosting = costings.find(c => {
-              const cSoId = c.salesOrder?._id || c.salesOrder;
+              const cSoId = idOf(c.salesOrder);
               return cSoId && String(cSoId) === String(soId);
             });
           }
@@ -108,19 +126,26 @@ const GoodsIssueWindow = () => {
 
         if (currentIssue?.items) {
           setEditableItems(currentIssue.items.map(item => {
-            const materialId = item.material?._id || item.material;
+            const materialId = idOf(item.material);
             const isColourless = colourlessIds.has(String(materialId));
+            const isSizeless = sizelessIds.has(String(materialId));
+
+            // Colourless / sizeless rows carry no colour / size (stock is stored with null)
+            const colorId = isColourless ? null : (idOf(item.color) || null);
+            const sizeId = isSizeless ? null : (idOf(item.size) || null);
+
             return {
-            materialId,
-            // Colourless materials have no colour (stock is stored with colour = null)
-            colorId: isColourless ? null : (item.color?._id || item.color || null),
-            materialName: item.material?.materialName || 'Material',
-            itemCode: item.material?.itemCode || 'MAT',
-            colorName: isColourless ? 'N/A' : getColorName(item.color, colorList),
-            uom: item.uom || 'Pcs',
-            allocatedQty: Number(item.allocatedQty || 0),
-            issueQty: Number(item.issuedQty || item.allocatedQty || 0),
-            value: item.value || 0
+              materialId,
+              colorId,
+              sizeId,
+              materialName: item.material?.materialName || 'Material',
+              itemCode: item.material?.itemCode || 'MAT',
+              colorName: colorId ? getColorName(item.color, colorList) : 'N/A',
+              sizeName: sizeId ? getSizeName(item.size, sizeList) : 'N/A',
+              uom: item.uom || 'Pcs',
+              allocatedQty: Number(item.allocatedQty || 0),
+              issueQty: Number(item.issuedQty || item.allocatedQty || 0),
+              value: item.value || 0
             };
           }));
         }
@@ -137,23 +162,41 @@ const GoodsIssueWindow = () => {
     fetchData();
   }, [id]);
 
-  // Returns the available stock of a material in the selected warehouse
-  const getAvailableStock = (materialId, colorId) => {
+  // Total on-hand stock of a material (colour + size) in the selected warehouse.
+  // Stock is stored per unit price, so the matching rows are summed.
+  // Colourless / sizeless rows match only stock stored with null colour / size.
+  const getAvailableStock = (materialId, colorId, sizeId) => {
     if (!materialId || !selectedWarehouse) return 0;
-    const stockEntry = stocks.find(s => {
-      const sMatId = s.material?._id || s.material;
-      const sColId = s.color?._id || s.color;
-      const sWhId = s.warehouse?._id || s.warehouse;
-      // Colourless rows (colorId null) match only stock stored with no colour
+
+    return stocks.reduce((total, s) => {
+      const sMatId = idOf(s.material);
+      const sColId = idOf(s.color) || null;
+      const sSizeId = idOf(s.size) || null;
+      const sWhId = idOf(s.warehouse);
+
       const colourMatches = colorId ? String(sColId) === String(colorId) : !sColId;
-      return String(sMatId) === String(materialId) &&
-             colourMatches &&
-             String(sWhId) === String(selectedWarehouse);
-    });
-    return stockEntry ? Number(stockEntry.qty || 0) : 0;
+      const sizeMatches = sizeId ? String(sSizeId) === String(sizeId) : !sSizeId;
+
+      const matches =
+        String(sMatId) === String(materialId) &&
+        colourMatches &&
+        sizeMatches &&
+        String(sWhId) === String(selectedWarehouse);
+
+      return matches ? total + Number(s.qty || 0) : total;
+    }, 0);
   };
 
-  // Updates the issue quantity of one row, within the allocated limit
+  // Human readable row label for alerts
+  const rowLabel = (item) => {
+    const parts = [item.materialName];
+    if (item.colorId) parts.push(item.colorName);
+    if (item.sizeId) parts.push(item.sizeName);
+    return parts.join(' / ');
+  };
+
+  // Updates the issue quantity of one row.
+  // Cannot exceed the allocated quantity or the available stock.
   const handleIssueQtyChange = (index, value) => {
     const numValue = Number(value) || 0;
     const item = editableItems[index];
@@ -168,6 +211,12 @@ const GoodsIssueWindow = () => {
       return;
     }
 
+    const available = getAvailableStock(item.materialId, item.colorId, item.sizeId);
+    if (numValue > available) {
+      alert(`Cannot issue more than available stock (${available.toLocaleString()}) for ${rowLabel(item)}.`);
+      return;
+    }
+
     const updated = [...editableItems];
     updated[index] = { ...updated[index], issueQty: numValue };
     setEditableItems(updated);
@@ -177,6 +226,7 @@ const GoodsIssueWindow = () => {
   const buildItemsPayload = () => editableItems.map(item => ({
     material: item.materialId,
     color: item.colorId,
+    size: item.sizeId,
     uom: item.uom,
     allocatedQty: item.allocatedQty,
     issuedQty: item.issueQty,
@@ -205,6 +255,25 @@ const GoodsIssueWindow = () => {
     }
   };
 
+  // Checks every row against the allocated qty and the available stock.
+  // Returns an error message, or null when all rows are valid.
+  const validateItems = () => {
+    for (const item of editableItems) {
+      const available = getAvailableStock(item.materialId, item.colorId, item.sizeId);
+
+      if (item.issueQty <= 0) {
+        return `Please enter Issue Qty for ${rowLabel(item)}.`;
+      }
+      if (item.issueQty > item.allocatedQty) {
+        return `Issue Qty for ${rowLabel(item)} is more than the allocated quantity (${item.allocatedQty.toLocaleString()}).`;
+      }
+      if (item.issueQty > available) {
+        return `Insufficient stock for ${rowLabel(item)}. Available: ${available.toLocaleString()}, Issue Qty: ${item.issueQty.toLocaleString()}.`;
+      }
+    }
+    return null;
+  };
+
   // Saves the current quantities, then submits the issue for approval
   const handleSubmitForApproval = async () => {
     if (!issueData?.workflow) {
@@ -217,11 +286,10 @@ const GoodsIssueWindow = () => {
       return;
     }
 
-    for (const item of editableItems) {
-      if (item.issueQty <= 0) {
-        alert(`Please enter Issue Qty for ${item.materialName}.`);
-        return;
-      }
+    const validationError = validateItems();
+    if (validationError) {
+      alert(validationError);
+      return;
     }
 
     if (!await confirmDialog('Submit this Material Issue for approval?')) return;
@@ -267,7 +335,7 @@ const GoodsIssueWindow = () => {
   const totalIssue = editableItems.reduce((sum, i) => sum + Number(i.issueQty || 0), 0);
 
   const warehouseName = issueData.warehouse?.warehouseName ||
-    warehouses.find(w => String(w._id) === String(issueData.warehouse?._id || issueData.warehouse))?.warehouseName ||
+    warehouses.find(w => String(w._id) === String(idOf(issueData.warehouse)))?.warehouseName ||
     'Main Store';
 
   const plantName = issueData.plant?.name || issueData.plant?.factoryCode || 'N/A';
@@ -406,6 +474,7 @@ const GoodsIssueWindow = () => {
                   <th className="p-3 px-4 border border-slate-300">Material Code</th>
                   <th className="p-3 px-4 border border-slate-300">Material Name</th>
                   <th className="p-3 px-4 border border-slate-300">Colour</th>
+                  <th className="p-3 px-4 border border-slate-300">Size</th>
                   <th className="p-3 px-4 text-center border border-slate-300">UOM</th>
                   <th className="p-3 px-4 text-right border border-slate-300 no-print">Available Stock</th>
                   <th className="p-3 px-4 text-right border border-slate-300">Issue Qty</th>
@@ -414,7 +483,8 @@ const GoodsIssueWindow = () => {
               <tbody className="divide-y divide-slate-200 text-slate-800">
                 {editableItems.length > 0 ? (
                   editableItems.map((item, idx) => {
-                    const availableStock = getAvailableStock(item.materialId, item.colorId);
+                    const availableStock = getAvailableStock(item.materialId, item.colorId, item.sizeId);
+                    const overStock = item.issueQty > availableStock;
 
                     return (
                       <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
@@ -422,21 +492,22 @@ const GoodsIssueWindow = () => {
                         <td className="p-3 px-4 font-mono text-xs font-bold border border-slate-200">{item.itemCode}</td>
                         <td className="p-3 px-4 font-medium border border-slate-200">{item.materialName}</td>
                         <td className="p-3 px-4 font-medium border border-slate-200">{item.colorName}</td>
+                        <td className="p-3 px-4 font-medium border border-slate-200">{item.sizeName}</td>
                         <td className="p-3 px-4 text-center border border-slate-200 font-medium text-slate-600">
                           {item.uom}
                         </td>
-                        <td className="p-3 px-4 text-right font-mono font-bold text-emerald-800 border border-slate-200 no-print">
+                        <td className={`p-3 px-4 text-right font-mono font-bold border border-slate-200 no-print ${availableStock <= 0 ? 'text-rose-600' : 'text-emerald-800'}`}>
                           {availableStock.toLocaleString()}
                         </td>
-                        <td className="p-3 px-4 text-right font-mono font-bold border border-slate-200 bg-amber-50/20">
+                        <td className={`p-3 px-4 text-right font-mono font-bold border border-slate-200 ${overStock ? 'bg-rose-50' : 'bg-amber-50/20'}`}>
                           {isDraft ? (
                             <input
                               type="number"
                               min="0"
-                              max={item.allocatedQty}
+                              max={Math.min(item.allocatedQty, availableStock)}
                               value={item.issueQty}
                               onChange={(e) => handleIssueQtyChange(idx, e.target.value)}
-                              className="w-24 px-2 py-1 bg-white border border-amber-300 rounded text-right text-sm font-bold focus:outline-none no-print"
+                              className={`w-24 px-2 py-1 bg-white border rounded text-right text-sm font-bold focus:outline-none no-print ${overStock ? 'border-rose-400 text-rose-700' : 'border-amber-300'}`}
                             />
                           ) : (
                             <span>{Number(item.issueQty || 0).toLocaleString()}</span>
@@ -447,7 +518,7 @@ const GoodsIssueWindow = () => {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="7" className="p-16 text-center text-slate-400 italic border border-slate-200">No items found.</td>
+                    <td colSpan="8" className="p-16 text-center text-slate-400 italic border border-slate-200">No items found.</td>
                   </tr>
                 )}
               </tbody>
@@ -455,7 +526,7 @@ const GoodsIssueWindow = () => {
               {editableItems.length > 0 && (
                 <tfoot>
                   <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold text-slate-900">
-                    <td colSpan="5" className="p-3 px-4 text-right text-xs uppercase border border-slate-300">TOTAL</td>
+                    <td colSpan="6" className="p-3 px-4 text-right text-xs uppercase border border-slate-300">TOTAL</td>
                     <td className="p-3 px-4 border border-slate-300 no-print"></td>
                     <td className="p-3 px-4 text-right font-mono border border-slate-300">{totalIssue.toLocaleString()}</td>
                   </tr>

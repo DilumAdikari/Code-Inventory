@@ -5,8 +5,8 @@ const MaterialIssueSchema = new mongoose.Schema({
   salesOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesOrder', required: true },
   productionOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'ProductionOrder', required: false },
   warehouse: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse', required: true },
-  
-  // 🌟 NEW — Plant (Supplier Master) field eka ekathu kala
+
+  // Plant (Supplier Master)
   plant: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Supplier',
@@ -30,7 +30,9 @@ const MaterialIssueSchema = new mongoose.Schema({
 
   items: [{
     material: { type: mongoose.Schema.Types.ObjectId, ref: 'Material', required: true },
-    color: { type: mongoose.Schema.Types.ObjectId, ref: 'Color', default:null },
+    // Colourless materials have no colour / size (stored as null)
+    color: { type: mongoose.Schema.Types.ObjectId, ref: 'Color', default: null },
+    size: { type: mongoose.Schema.Types.ObjectId, ref: 'Size', default: null },
     uom: { type: String, default: 'Pcs' },
     allocatedQty: { type: Number, required: true },
     issuedQty: { type: Number, required: true },
