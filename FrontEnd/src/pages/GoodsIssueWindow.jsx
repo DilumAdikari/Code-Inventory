@@ -14,6 +14,16 @@ const formatDate = (value) => {
   return isNaN(date) ? '-' : date.toISOString().split('T')[0];
 };
 
+// Returns the colour name for a colour value (populated object or ID)
+const getColorName = (color, colorList) => {
+  if (color && typeof color === 'object' && (color.name || color.colorName)) {
+    return color.name || color.colorName;
+  }
+  const id = String(color?._id || color || '');
+  const found = toArray(colorList).find(c => String(c._id) === id);
+  return found?.name || found?.colorName || '-';
+};
+
 const GoodsIssueWindow = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -35,17 +45,19 @@ const GoodsIssueWindow = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [issueRes, whRes, stockRes, costingRes, poRes] = await Promise.all([
+        const [issueRes, whRes, stockRes, costingRes, poRes, colorRes] = await Promise.all([
           axios.get(`${API_URL}/material-issues`),
           axios.get(`${API_URL}/warehouses`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/stocks`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/costing`).catch(() => ({ data: [] })),
-          axios.get(`${API_URL}/production-orders`).catch(() => ({ data: [] }))
+          axios.get(`${API_URL}/production-orders`).catch(() => ({ data: [] })),
+          axios.get(`${API_URL}/colors`).catch(() => ({ data: [] }))
         ]);
 
         const issues = toArray(issueRes.data);
         const costings = toArray(costingRes.data);
         const productionOrders = toArray(poRes.data);
+        const colorList = toArray(colorRes.data);
 
         const currentIssue = issues.find(i => String(i._id) === String(id));
         setIssueData(currentIssue || null);
@@ -92,7 +104,7 @@ const GoodsIssueWindow = () => {
             colorId: item.color?._id || item.color,
             materialName: item.material?.materialName || 'Material',
             itemCode: item.material?.itemCode || 'MAT',
-            colorName: item.color?.name || item.color?.colorName || 'Default',
+            colorName: getColorName(item.color, colorList),
             uom: item.uom || 'Pcs',
             allocatedQty: Number(item.allocatedQty || 0),
             issueQty: Number(item.issuedQty || item.allocatedQty || 0),
@@ -113,12 +125,15 @@ const GoodsIssueWindow = () => {
   }, [id]);
 
   // Returns the available stock of a material in the selected warehouse
-  const getAvailableStock = (materialId) => {
+  const getAvailableStock = (materialId, colorId) => {
     if (!materialId || !selectedWarehouse) return 0;
     const stockEntry = stocks.find(s => {
       const sMatId = s.material?._id || s.material;
+      const sColId = s.color?._id || s.color;
       const sWhId = s.warehouse?._id || s.warehouse;
-      return String(sMatId) === String(materialId) && String(sWhId) === String(selectedWarehouse);
+      return String(sMatId) === String(materialId) &&
+             String(sColId) === String(colorId || '') &&
+             String(sWhId) === String(selectedWarehouse);
     });
     return stockEntry ? Number(stockEntry.qty || 0) : 0;
   };
@@ -375,6 +390,7 @@ const GoodsIssueWindow = () => {
                   <th className="p-3 px-4 w-10 border border-slate-300 text-center">#</th>
                   <th className="p-3 px-4 border border-slate-300">Material Code</th>
                   <th className="p-3 px-4 border border-slate-300">Material Name</th>
+                  <th className="p-3 px-4 border border-slate-300">Colour</th>
                   <th className="p-3 px-4 text-center border border-slate-300">UOM</th>
                   <th className="p-3 px-4 text-right border border-slate-300 no-print">Available Stock</th>
                   <th className="p-3 px-4 text-right border border-slate-300">Issue Qty</th>
@@ -383,13 +399,14 @@ const GoodsIssueWindow = () => {
               <tbody className="divide-y divide-slate-200 text-slate-800">
                 {editableItems.length > 0 ? (
                   editableItems.map((item, idx) => {
-                    const availableStock = getAvailableStock(item.materialId);
+                    const availableStock = getAvailableStock(item.materialId, item.colorId);
 
                     return (
                       <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
                         <td className="p-3 px-4 text-center font-mono text-xs border border-slate-200">{idx + 1}</td>
                         <td className="p-3 px-4 font-mono text-xs font-bold border border-slate-200">{item.itemCode}</td>
                         <td className="p-3 px-4 font-medium border border-slate-200">{item.materialName}</td>
+                        <td className="p-3 px-4 font-medium border border-slate-200">{item.colorName}</td>
                         <td className="p-3 px-4 text-center border border-slate-200 font-medium text-slate-600">
                           {item.uom}
                         </td>
@@ -415,7 +432,7 @@ const GoodsIssueWindow = () => {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="6" className="p-16 text-center text-slate-400 italic border border-slate-200">No items found.</td>
+                    <td colSpan="7" className="p-16 text-center text-slate-400 italic border border-slate-200">No items found.</td>
                   </tr>
                 )}
               </tbody>
@@ -423,7 +440,7 @@ const GoodsIssueWindow = () => {
               {editableItems.length > 0 && (
                 <tfoot>
                   <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold text-slate-900">
-                    <td colSpan="4" className="p-3 px-4 text-right text-xs uppercase border border-slate-300">TOTAL</td>
+                    <td colSpan="5" className="p-3 px-4 text-right text-xs uppercase border border-slate-300">TOTAL</td>
                     <td className="p-3 px-4 border border-slate-300 no-print"></td>
                     <td className="p-3 px-4 text-right font-mono border border-slate-300">{totalIssue.toLocaleString()}</td>
                   </tr>
