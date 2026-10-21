@@ -24,6 +24,7 @@ const GoodsIssueWindow = () => {
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [editableItems, setEditableItems] = useState([]);
   const [cmCost, setCmCost] = useState(0);
+  const [costingNo, setCostingNo] = useState('-');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [approvaling, setApprovaling] = useState(false);
@@ -81,6 +82,7 @@ const GoodsIssueWindow = () => {
 
           if (matchedCosting) {
             setCmCost(Number(matchedCosting.cmCost || matchedCosting.totalCmCost || 0));
+            setCostingNo(matchedCosting.costingNo || '-');
           }
         }
 
@@ -326,6 +328,7 @@ const GoodsIssueWindow = () => {
           <div>SALES ORDER REF : <span className="font-bold text-slate-900">{issueData.salesOrder?.orderRef || 'N/A'}</span></div>
           <div>PRODUCTION ORDER : <span className="font-bold text-slate-900">{issueData.productionOrder?.productionOrderNo || 'N/A'}</span></div>
           <div>WAREHOUSE : <span className="font-bold text-slate-900">{warehouseName}</span></div>
+          <div>COSTING NO : <span className="font-bold text-slate-900">{costingNo}</span></div>
           <div>PLANT / FACTORY : <span className="font-bold text-slate-900">{plantName}</span></div>
           <div className="col-span-2">WORKFLOW : <span className="font-bold text-slate-900">{issueData.workflow?.code || issueData.workflow?.name || 'N/A'}</span></div>
           <div className="col-span-2 pt-2 border-t border-slate-200 flex justify-between items-center">

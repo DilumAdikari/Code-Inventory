@@ -15,6 +15,7 @@ const MaterialIssuing = () => {
   const navigate = useNavigate();
 
   const [productionOrders, setProductionOrders] = useState([]);
+  const [costings, setCostings] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [factories, setFactories] = useState([]);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
@@ -34,16 +35,18 @@ const MaterialIssuing = () => {
   // Loads material issues and the master lists used by the manual issue form
   const fetchIssues = async () => {
     try {
-      const [response, poRes, wfRes, factoryRes] = await Promise.all([
+      const [response, poRes, wfRes, factoryRes, costingRes] = await Promise.all([
         axios.get(`${API_URL}/material-issues`),
         axios.get(`${API_URL}/production-orders`),
         axios.get(`${API_URL}/workflows`),
-        axios.get(`${API_URL}/factories`).catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/factories`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/costing`).catch(() => ({ data: [] }))
       ]);
       setIssuesList(toArray(response.data));
       setProductionOrders(toArray(poRes.data));
       setWorkflows(toArray(wfRes.data));
       setFactories(toArray(factoryRes.data));
+      setCostings(toArray(costingRes.data));
       setLoading(false);
     } catch (err) {
       console.error('Failed to fetch material issues:', err);
@@ -150,6 +153,21 @@ const MaterialIssuing = () => {
     return matchesSearch && matchesStatus;
   });
 
+  // Finds the costing number for an issue through its production order
+  const getCostingNoForIssue = (issue) => {
+    const poId = String(issue.productionOrder?._id || issue.productionOrder || '');
+    const po = toArray(productionOrders).find(p => String(p._id) === poId);
+
+    const costingRef = po?.costing || issue.productionOrder?.costing;
+    if (costingRef && typeof costingRef === 'object' && costingRef.costingNo) {
+      return costingRef.costingNo;
+    }
+
+    const costingId = String(costingRef?._id || costingRef || '');
+    const found = toArray(costings).find(c => String(c._id) === costingId);
+    return found?.costingNo || '-';
+  };
+
   // Only completed production orders that have a BOM can be issued
   const issuableProductionOrders = toArray(productionOrders).filter(
     po => po.status === 'Completed' && toArray(po.bomItems).length > 0
@@ -216,6 +234,7 @@ const MaterialIssuing = () => {
                 <th className="p-4 px-6">Issue ID</th>
                 <th className="p-4 px-6">Sales Order Ref</th>
                 <th className="p-4 px-6">Production Order</th>
+                <th className="p-4 px-6">Costing</th>
                 <th className="p-4 px-6">Plant / Factory</th>
                 <th className="p-4 px-6 text-center">Items</th>
                 <th className="p-4 px-6">Warehouse</th>
@@ -244,6 +263,7 @@ const MaterialIssuing = () => {
                     <td className="p-4 px-6 text-sm text-slate-800 font-semibold">
                       {issue.productionOrder?.productionOrderNo || 'PO-GEN'}
                     </td>
+                    <td className="p-4 px-6 text-sm font-mono text-slate-700 font-semibold">{getCostingNoForIssue(issue)}</td>
                     <td className="p-4 px-6 text-sm text-slate-700 font-semibold">{plantLabel}</td>
                     <td className="p-4 px-6 text-sm text-center font-bold text-slate-800">
                       <span className="px-2.5 py-1 bg-slate-100 rounded-lg text-xs font-mono">
@@ -261,7 +281,7 @@ const MaterialIssuing = () => {
                 );
               }) : (
                 <tr>
-                  <td colSpan="8" className="py-16 text-center text-slate-400 italic">No material issuing records found.</td>
+                  <td colSpan="9" className="py-16 text-center text-slate-400 italic">No material issuing records found.</td>
                 </tr>
               )}
             </tbody>
