@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Check, Loader2, ArrowLeft, GitBranch, ListFilter, X } from 'lucide-react'; // 🌟 ✅ මෙන්න මෙතනට 'X' අයිකන් එක නිවැරදිව එකතු කළා!
 import axios from 'axios';
+import { confirmDialog } from '../components/AppDialog';
+import { API_URL } from "../api/config";
 
 const WorkflowRegistry = () => {
   const [workflows, setWorkflows] = useState([]);
   const [users, setUsers] = useState([]); 
   const [loading, setLoading] = useState(true);
 
-  // View Toggle State (true නම් List එක පෙන්වයි, false නම් Form එක පෙන්වයි)
+
   const [isListView, setIsListView] = useState(true);
 
   // Form states
@@ -25,13 +27,13 @@ const WorkflowRegistry = () => {
     try {
       setLoading(true);
       const [wfRes, userRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/workflows'),
-        axios.get('http://192.168.1.30:5003/api/auth/users').catch(() => ({ data: [] }))
+        axios.get('${API_URL}/workflows'),
+        axios.get('${API_URL}/auth/users').catch(() => ({ data: [] }))
       ]);
 
       setWorkflows(wfRes.data || []);
       
-      // සැබෑ යූසර්ස්ලා නැත්නම් මොක් ඩේටා (Fallback) පාවිච්චි කරයි
+     
       setUsers(userRes?.data?.length ? userRes.data : [
         { _id: '1', username: 'Dushmantha Nadikumara' }, 
         { _id: '2', username: 'Imasha Rathnayaka' }
@@ -49,7 +51,7 @@ const WorkflowRegistry = () => {
     if (!selectedUser) return alert("Please select an employee user first.");
     const uObj = users.find(u => u._id === selectedUser);
     
-    // දැනටමත් ඒ ලෙවල් එකට ඒ යූසර්ව දාලද බලනවා
+    
     if (configUsers.some(cu => cu.user === selectedUser)) {
       alert("This user is already added to the configuration matrix.");
       return;
@@ -73,11 +75,11 @@ const WorkflowRegistry = () => {
     }
     try {
       const payload = { code, description, permission, usersConfiguration: configUsers };
-      await axios.post('http://192.168.1.30:5003/api/workflows', payload);
+      await axios.post('${API_URL}/workflows', payload);
       
       alert("Workflow registration template saved successfully!");
       
-      // Form එක Reset කරලා ආපහු List එකට හරවා යැවීම
+      
       setCode(''); 
       setDescription(''); 
       setUsersConfiguration([]);
@@ -89,9 +91,9 @@ const WorkflowRegistry = () => {
   };
 
   const handleDeleteWorkflow = async (wfId) => {
-    if (!window.confirm("Are you sure you want to completely remove this workflow template?")) return;
+    if (!await confirmDialog("Are you sure you want to completely remove this workflow template?")) return;
     try {
-      await axios.delete(`http://192.168.1.30:5003/api/workflows/${wfId}`);
+      await axios.delete(`${API_URL}/workflows/${wfId}`);
       loadData();
     } catch (err) {
       alert("Failed to delete workflow template.");
@@ -249,7 +251,7 @@ const WorkflowRegistry = () => {
                         <td className="py-3 px-4">{cu.username}</td>
                         <td className="py-3 px-4"><span className="px-2 py-0.5 bg-slate-100 rounded text-xs text-slate-600 font-medium">{cu.mode}</span></td>
                         <td className="py-3 px-4 text-center">
-                          {/* 🌟 මෙතන තිබ්බ 'X' අයිකනය දැන් කිසිම ලෙඩක් නැතුව ලෝඩ් වෙයි */}
+                          
                           <button type="button" onClick={() => setUsersConfiguration(configUsers.filter((_, i) => i !== idx))} className="text-slate-400 hover:text-rose-600 transition-colors"><X size={16}/></button>
                         </td>
                       </tr>

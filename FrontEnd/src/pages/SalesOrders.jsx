@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, X, Calendar, User, Hash, FileText, Building2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_URL } from '../api/config';
 
-const API_BASE = 'http://192.168.1.30:5003/api';
-
+// Sales order status options used in the status filter
 const STATUS_OPTIONS = [
   'Draft',
   'Pending Approval',
@@ -15,29 +15,32 @@ const STATUS_OPTIONS = [
   'Rejected'
 ];
 
+// Returns the value as an array, or an empty array if it is not one
+const toArray = (value) => (Array.isArray(value) ? value : []);
+
 const SalesOrders = () => {
   const navigate = useNavigate();
 
-  // Table state (server-side paged)
+  // Table state (server-side paging)
   const [orders, setOrders] = useState([]);
   const [tableLoading, setTableLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
-  // Filters
+  // Filter state
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
-  // Master data
+  // Master data used by the create form
   const [workflows, setWorkflows] = useState([]);
   const [warehousesList, setWarehousesList] = useState([]);
   const [customersList, setCustomersList] = useState([]);
 
-  // Modal state
+  // Create modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
@@ -52,44 +55,44 @@ const SalesOrders = () => {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  // Load master data once
+  // Loads workflows, customers and warehouses once when the page opens
   const loadMasters = async () => {
-    const [wfRes, custRes, whRes] = await Promise.all([
-      axios.get(`${API_BASE}/workflows`).catch(() => ({ data: [] })),
-      axios.get(`${API_BASE}/customers`).catch(() => ({ data: [] })),
-      axios.get(`${API_BASE}/warehouses`).catch(() => ({ data: [] }))
+    const [workflowRes, customerRes, warehouseRes] = await Promise.all([
+      axios.get(`${API_URL}/workflows`).catch(() => ({ data: [] })),
+      axios.get(`${API_URL}/customers`).catch(() => ({ data: [] })),
+      axios.get(`${API_URL}/warehouses`).catch(() => ({ data: [] }))
     ]);
-    setWorkflows(wfRes.data || []);
-    setCustomersList(custRes.data || []);
-    setWarehousesList(whRes.data || []);
+    setWorkflows(toArray(workflowRes.data));
+    setCustomersList(toArray(customerRes.data));
+    setWarehousesList(toArray(warehouseRes.data));
   };
 
   useEffect(() => {
     loadMasters();
   }, []);
 
-  // Debounce search input (400ms)
+  // Waits 400ms after the user stops typing before applying the search
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       setSearch(searchInput.trim());
       setPage(1);
     }, 400);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Any filter change goes back to page 1
+  // Any filter change goes back to the first page
   useEffect(() => {
     setPage(1);
   }, [statusFilter, fromDate, toDate]);
 
-  // Fetch one page from server
+  // Fetches one page of sales orders from the server
   const fetchOrders = async () => {
     setTableLoading(true);
     try {
-      const { data } = await axios.get(`${API_BASE}/sales-orders/paged`, {
+      const { data } = await axios.get(`${API_URL}/sales-orders/paged`, {
         params: { page, search, status: statusFilter, from: fromDate, to: toDate }
       });
-      setOrders(data.data || []);
+      setOrders(toArray(data.data));
       setTotal(data.total || 0);
       setTotalPages(data.totalPages || 1);
     } catch (err) {
@@ -106,6 +109,7 @@ const SalesOrders = () => {
     fetchOrders();
   }, [page, search, statusFilter, fromDate, toDate]);
 
+  // Clears every filter back to its default value
   const clearFilters = () => {
     setSearchInput('');
     setStatusFilter('');
@@ -113,19 +117,19 @@ const SalesOrders = () => {
     setToDate('');
   };
 
-  // Open create modal: order ID comes from the server
+  // Opens the create modal and fetches the next order reference from the server
   const handleOpenCreateModal = async () => {
-    let nextId = '';
+    let nextRef = '';
     try {
-      const { data } = await axios.get(`${API_BASE}/sales-orders/next-ref`);
-      nextId = data.orderRef;
+      const { data } = await axios.get(`${API_URL}/sales-orders/next-ref`);
+      nextRef = data.orderRef || '';
     } catch (err) {
       console.error('Could not get next order ref:', err);
       setMessage({ type: 'error', text: 'Could not generate Order ID. Check the server.' });
     }
 
     setFormData({
-      orderRef: nextId,
+      orderRef: nextRef,
       buyerName: '',
       shipmentDate: '',
       workflowTemplate: '',
@@ -140,10 +144,12 @@ const SalesOrders = () => {
     setIsModalOpen(true);
   };
 
+  // Updates a form field when its input changes
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  // Validates the form and creates a new sales order
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -166,10 +172,11 @@ const SalesOrders = () => {
         items: []
       };
 
-      const { data } = await axios.post(`${API_BASE}/sales-orders`, payload);
+      const { data } = await axios.post(`${API_URL}/sales-orders`, payload);
 
-      setMessage({ type: 'success', text: 'Sales Order initialized successfully! Redirecting to grid...' });
+      setMessage({ type: 'success', text: 'Sales Order created successfully. Redirecting to the order grid...' });
 
+      // Gives the user a moment to read the success message before redirecting
       setTimeout(() => {
         setIsModalOpen(false);
         setMessage({ type: '', text: '' });
@@ -179,13 +186,14 @@ const SalesOrders = () => {
       console.error('Submit Error:', err);
       setMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Failed to save order. Make sure Order ID is unique.'
+        text: err.response?.data?.message || 'Failed to save order. Make sure the Order ID is unique.'
       });
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Returns the badge classes for a sales order status
   const getStatusStyle = (status) => {
     switch (status) {
       case 'Pending Approval':
@@ -205,20 +213,23 @@ const SalesOrders = () => {
     }
   };
 
+  // Formats a date as YYYY-MM-DD, or returns "-" when the date is invalid
   const formatDate = (value) => {
     if (!value) return '-';
-    const d = new Date(value);
-    return isNaN(d) ? '-' : d.toISOString().split('T')[0];
+    const date = new Date(value);
+    return isNaN(date) ? '-' : date.toISOString().split('T')[0];
   };
 
-  const filteredCustomers = customersList.filter(c =>
-    c.customerName && c.customerName.toLowerCase().includes(customerSearch.toLowerCase())
+  // Customers whose name matches the text typed in the buyer field
+  const filteredCustomers = toArray(customersList).filter((customer) =>
+    customer.customerName &&
+    customer.customerName.toLowerCase().includes(customerSearch.toLowerCase())
   );
 
   return (
     <div className="w-full space-y-6 text-sm font-normal text-slate-700 relative animate-in fade-in duration-200">
 
-      {/* HEADER */}
+      {/* PAGE HEADER */}
       <div className="flex justify-between items-center bg-white p-5 rounded-xl border border-slate-100">
         <div>
           <h2 className="text-lg font-semibold text-slate-800">Sales Orders Overview</h2>
@@ -252,8 +263,8 @@ const SalesOrders = () => {
             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm h-10 focus:outline-none"
           >
             <option value="">All statuses</option>
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>{s}</option>
+            {STATUS_OPTIONS.map((status) => (
+              <option key={status} value={status}>{status}</option>
             ))}
           </select>
         </div>
@@ -289,7 +300,7 @@ const SalesOrders = () => {
         </div>
       </div>
 
-      {/* TABLE */}
+      {/* ORDERS TABLE */}
       <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
         {tableLoading ? (
           <div className="p-12 text-sm text-slate-500 flex items-center justify-center gap-2">
@@ -341,7 +352,7 @@ const SalesOrders = () => {
           <span>{total.toLocaleString()} orders</span>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setPage(p => Math.max(p - 1, 1))}
+              onClick={() => setPage((p) => Math.max(p - 1, 1))}
               disabled={page <= 1 || tableLoading}
               className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1"
             >
@@ -349,7 +360,7 @@ const SalesOrders = () => {
             </button>
             <span className="px-2">Page {page} of {totalPages}</span>
             <button
-              onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+              onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
               disabled={page >= totalPages || tableLoading}
               className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1"
             >
@@ -380,12 +391,19 @@ const SalesOrders = () => {
                 </div>
               )}
 
-              {/* Order ID (server generated, read only) */}
+              {/* Order ID (generated by the server, read only) */}
               <div className="space-y-1">
                 <label className="block text-[11px] text-slate-400 font-medium uppercase">Order ID / Ref * (Auto Generated)</label>
                 <div className="relative">
                   <Hash className="absolute left-3 top-3 text-slate-400" size={14} />
-                  <input type="text" name="orderRef" readOnly required value={formData.orderRef} className="w-full pl-9 pr-3 py-2 bg-slate-100 border border-slate-200 rounded-lg font-bold text-emerald-900 cursor-not-allowed select-none h-11 text-sm" />
+                  <input
+                    type="text"
+                    name="orderRef"
+                    readOnly
+                    required
+                    value={formData.orderRef}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-100 border border-slate-200 rounded-lg font-bold text-emerald-900 cursor-not-allowed select-none h-11 text-sm"
+                  />
                 </div>
               </div>
 
@@ -398,7 +416,7 @@ const SalesOrders = () => {
                     type="text"
                     name="buyerName"
                     required
-                    placeholder="Type first 2 letters to search... (e.g., El...)"
+                    placeholder="Type first 2 letters to search..."
                     value={customerSearch}
                     onChange={(e) => {
                       setCustomerSearch(e.target.value);
@@ -431,7 +449,7 @@ const SalesOrders = () => {
 
                     {filteredCustomers.length === 0 && (
                       <div className="p-3 text-center text-[11px] text-slate-400 italic">
-                        No matching customers found. Type to use custom name.
+                        No matching customers found. Type to use a custom name.
                       </div>
                     )}
                   </div>
@@ -451,15 +469,15 @@ const SalesOrders = () => {
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-slate-400 font-medium h-11 text-sm"
                   >
                     <option value="">Select Warehouse</option>
-                    {warehousesList.map((wh) => {
-                      const whName = wh.warehouseName || wh.name || wh.code || wh._id;
-                      return <option key={wh._id} value={whName}>{whName}</option>;
+                    {warehousesList.map((warehouse) => {
+                      const warehouseName = warehouse.warehouseName || warehouse.name || warehouse.code || warehouse._id;
+                      return <option key={warehouse._id} value={warehouseName}>{warehouseName}</option>;
                     })}
                   </select>
                 </div>
               </div>
 
-              {/* Workflow */}
+              {/* Approval workflow */}
               <div className="space-y-1">
                 <label className="block text-[11px] text-slate-400 font-medium uppercase">Attach Approval Workflow Template *</label>
                 <select
@@ -470,7 +488,9 @@ const SalesOrders = () => {
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-slate-400 font-medium h-11 text-sm"
                 >
                   <option value="">Select Sign-off Workflow Matrix</option>
-                  {workflows.map(wf => <option key={wf._id} value={wf._id}>{wf.code}</option>)}
+                  {workflows.map((workflow) => (
+                    <option key={workflow._id} value={workflow._id}>{workflow.code}</option>
+                  ))}
                 </select>
               </div>
 
@@ -491,8 +511,18 @@ const SalesOrders = () => {
               </div>
 
               <div className="flex gap-3 pt-2 border-t border-slate-100 shrink-0">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-500 transition-all font-medium cursor-pointer">Cancel</button>
-                <button type="submit" disabled={submitting} className="flex-1 py-2 bg-emerald-900 hover:bg-emerald-800 text-white rounded-lg shadow-sm flex items-center justify-center gap-2 transition-all font-medium cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-500 transition-all font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-2 bg-emerald-900 hover:bg-emerald-800 text-white rounded-lg shadow-sm flex items-center justify-center gap-2 transition-all font-medium cursor-pointer"
+                >
                   {submitting ? <Loader2 className="animate-spin" size={14} /> : 'Save Order'}
                 </button>
               </div>

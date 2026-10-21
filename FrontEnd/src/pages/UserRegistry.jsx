@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, ShieldCheck, UserPlus, Users, CheckCircle2, Loader2 } from 'lucide-react';
-import axios from 'axios'; // 🌟 නිවැරදිව Axios Import කරන ලදී
+import axios from 'axios';
+import { API_URL } from "../api/config";
 
 const UserRegistry = () => {
   const [usersList, setUsersList] = useState([]);
@@ -24,7 +25,7 @@ const UserRegistry = () => {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('http://192.168.1.30:5003/api/auth/users');
+      const res = await axios.get('${API_URL}/auth/users');
       setUsersList(res.data || []);
       setLoading(false);
     } catch (err) {
@@ -61,7 +62,7 @@ const UserRegistry = () => {
     e.preventDefault();
     if (!regUsername || !regPassword) return alert("Please fill all fields.");
     try {
-      await axios.post('http://192.168.1.30:5003/api/auth/register', {
+      await axios.post('${API_URL}/auth/register', {
         username: regUsername,
         password: regPassword
       });
@@ -76,7 +77,7 @@ const UserRegistry = () => {
   const handleSavePermissions = async () => {
     if (!selectedUserId) return alert("Please select a user first.");
     try {
-      await axios.put(`http://192.168.1.30:5003/api/auth/users/${selectedUserId}/permissions`, {
+      await axios.put(`${API_URL}/auth/users/${selectedUserId}/permissions`, {
         permissions: matrix
       });
       alert("Access control matrix updated successfully!");

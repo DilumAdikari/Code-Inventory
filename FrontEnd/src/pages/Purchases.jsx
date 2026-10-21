@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Loader2, Search, ShoppingCart, Eye, X, Save, Printer, Send } from 'lucide-react';
+import { API_URL } from "../api/config";   
+import { confirmDialog } from '../components/AppDialog';
 
 const Purchases = () => {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -17,16 +19,16 @@ const Purchases = () => {
   const [saving, setSaving] = useState(false);
   const [submittingApproval, setSubmittingApproval] = useState(false);
 
-  // ✅ FIX 3 — currentUsername defined
+  
   const currentUsername = localStorage.getItem('username') || 'ADMIN';
 
   const fetchPurchaseOrders = async () => {
     try {
       setLoading(true);
       const [poRes, supRes, wfRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/purchases'),
-        axios.get('http://192.168.1.30:5003/api/suppliers').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/workflows').catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/purchases`),
+        axios.get(`${API_URL}/suppliers`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/workflows`).catch(() => ({ data: [] }))
       ]);
       setPurchaseOrders(poRes.data || []);
 
@@ -57,7 +59,7 @@ const Purchases = () => {
     setEditItems(updated);
   };
 
-  // ✅ FIX 1 — correct payload using selectedPO and editItems
+  
   const handleSavePO = async (e) => {
     e.preventDefault();
     if (!selectedPO) return;
@@ -73,12 +75,12 @@ const Purchases = () => {
         items: editItems,
         totalAmount,
         remarks: selectedPO.remarks || '',
-        // ✅ save as Draft — user must submit for approval separately
+        
         status: 'Draft'
       };
 
       const res = await axios.put(
-        `http://192.168.1.30:5003/api/purchases/${selectedPO._id}/update`,
+        `${API_URL}/purchases/${selectedPO._id}/update`,
         payload
       );
 
@@ -99,7 +101,7 @@ const Purchases = () => {
     }
   };
 
-  // ✅ NEW — Submit for Approval
+  
   const handleSubmitForApproval = async () => {
     if (!selectedPO) return;
 
@@ -108,16 +110,16 @@ const Purchases = () => {
       return;
     }
 
-    if (!window.confirm("Submit this Purchase Order for approval?")) return;
+    if (!await confirmDialog("Submit this Purchase Order for approval?")) return;
 
     try {
       setSubmittingApproval(true);
 
-      // save latest edits first
+      
       const totalAmount = editItems.reduce((sum, i) =>
         sum + (Number(i.orderedQty || 0) * Number(i.unitPrice || 0)), 0);
 
-      await axios.put(`http://192.168.1.30:5003/api/purchases/${selectedPO._id}/update`, {
+      await axios.put(`${API_URL}/purchases/${selectedPO._id}/update`, {
         supplierName: editSupplier,
         items: editItems,
         totalAmount,
@@ -127,7 +129,7 @@ const Purchases = () => {
 
       // then submit for approval
       const res = await axios.post(
-        `http://192.168.1.30:5003/api/purchases/submit-approval/${selectedPO._id}`,
+        `${API_URL}/purchases/submit-approval/${selectedPO._id}`,
         { createdBy: currentUsername, workflowId: editWorkflowId }
       );
 
@@ -149,10 +151,10 @@ const Purchases = () => {
   };
 
   const handleCancelOrder = async (poId) => {
-    if (!window.confirm("Are you sure you want to cancel this order?")) return;
+    if (!await confirmDialog("Are you sure you want to cancel this order?")) return;
     try {
       const res = await axios.put(
-        `http://192.168.1.30:5003/api/purchases/${poId}/status`,
+        `${API_URL}/purchases/${poId}/status`,
         { status: 'Cancelled' }
       );
       alert("Purchase order cancelled successfully!");
@@ -171,7 +173,7 @@ const Purchases = () => {
     (po.purchaseOrderNo || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // ✅ FIX 2 — correct status style helper covering all statuses
+  
   const getStatusStyle = (status) => {
     if (status === 'Approved' || status === 'Received') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
     if (status === 'Pending Approval') return 'bg-amber-50 text-amber-700 border-amber-200';
@@ -191,7 +193,7 @@ const Purchases = () => {
   const isApproved = selectedPO && (selectedPO.status === 'Approved' || selectedPO.status === 'Received');
   const isCancelled = selectedPO && selectedPO.status === 'Cancelled';
   const isPendingApproval = selectedPO && selectedPO.status === 'Pending Approval';
-  // ✅ FIX 3 — Pending Approval also locks the form
+  
   const isLocked = isApproved || isCancelled || isPendingApproval;
 
   return (
@@ -264,7 +266,7 @@ const Purchases = () => {
                         LKR {totalAmt.toLocaleString()}
                       </td>
                       <td className="p-4 text-center">
-                        {/* ✅ FIX 2 — shows correct status for all states */}
+                        
                         <span className={`px-2.5 py-1 rounded text-xs font-semibold border ${getStatusStyle(po.status)}`}>
                           {po.status || 'Draft'}
                         </span>
@@ -327,7 +329,7 @@ const Purchases = () => {
                   </select>
                 </div>
 
-                {/* Workflow selector — only shown for Draft */}
+                
                 <div className="space-y-1">
                   <label className="block text-xs font-semibold text-slate-600 uppercase">
                     Approval Workflow *
@@ -459,7 +461,7 @@ const Purchases = () => {
                     Close
                   </button>
 
-                  {/* ✅ Draft only — show Save and Submit buttons */}
+                  
                   {!isLocked && (
                     <>
                       <button

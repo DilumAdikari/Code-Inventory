@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Plus, Loader2, CheckCircle2, AlertTriangle, Building2, Phone, Mail, MapPin } from 'lucide-react';
 import { supplierApi } from '../api/supplierApi';
+import { API_URL } from "../api/config";
 
 const SupplierRegistration = () => {
   const [suppliers, setSuppliers] = useState([]);

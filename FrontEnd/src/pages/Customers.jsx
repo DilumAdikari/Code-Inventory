@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Plus, Search, Loader2, X, Mail, Phone, MapPin } from 'lucide-react';
+import { API_URL } from "../api/config";
 
 const Customers = () => {
   const [customers, setCustomers] = useState([]);
@@ -11,7 +12,7 @@ const Customers = () => {
 
   const fetchCustomers = async () => {
     try {
-      const res = await axios.get('http://192.168.1.30:5003/api/customers');
+      const res = await axios.get('${API_URL}/customers');
       setCustomers(res.data);
       setLoading(false);
     } catch (err) {
@@ -27,7 +28,7 @@ const Customers = () => {
   const handleSave = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://192.168.1.30:5003/api/customers', form);
+      await axios.post('${API_URL}/customers', form);
       setIsModalOpen(false);
       setForm({ customerName: '', email: '', phone: '', address: '' });
       fetchCustomers();

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { RotateCcw, Loader2, Plus, X, Save, ArrowLeft, CheckCircle2, Printer } from 'lucide-react';
+import { API_URL } from "../api/config";
+import { confirmDialog } from '../components/AppDialog';
 
 const GrnReturn = () => {
   const [returnsList, setReturnsList] = useState([]);
@@ -23,9 +25,9 @@ const GrnReturn = () => {
     try {
       setLoading(true);
       const [retRes, grnRes, wfRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/grn-returns').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/grn').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/workflows').catch(() => ({ data: [] }))
+        axios.get('${API_URL}/grn-returns').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/grn').catch(() => ({ data: [] })),
+        axios.get('${API_URL}/workflows').catch(() => ({ data: [] }))
       ]);
 
       setReturnsList(Array.isArray(retRes.data) ? retRes.data : (retRes.data?.data || []));
@@ -65,7 +67,7 @@ const GrnReturn = () => {
 
     try {
       setSubmitting(true);
-      const grnRes = await axios.get('http://192.168.1.30:5003/api/grn');
+      const grnRes = await axios.get('${API_URL}/grn');
       const allGrns = Array.isArray(grnRes.data) ? grnRes.data : (grnRes.data?.data || []);
       const targetGrn = allGrns.find(g => g.grnNo === selectedGrn);
 
@@ -120,7 +122,7 @@ const GrnReturn = () => {
         returnedBy: currentUsername
       };
 
-      await axios.post('http://192.168.1.30:5003/api/grn-returns/initialize', payload);
+      await axios.post('${API_URL}/grn-returns/initialize', payload);
       alert("GRN Return saved as Draft successfully!");
       
       setIsModalOpen(false);
@@ -188,7 +190,7 @@ const GrnReturn = () => {
       }
     }
 
-    if (!window.confirm("Are you sure you want to submit this return for approval?")) return;
+    if (!await confirmDialog("Are you sure you want to submit this return for approval?")) return;
 
     try {
       setSubmitting(true);
@@ -202,7 +204,7 @@ const GrnReturn = () => {
         reason: "GRN Return Approval Submission"
       };
 
-      const res = await axios.post(`http://192.168.1.30:5003/api/grn-returns/return`, payload);
+      const res = await axios.post(`${API_URL}/grn-returns/return`, payload);
       alert(`GRN Return submitted for approval successfully! Assigned to: ${res.data.approver || 'Approver'}`);
       
       setActiveReturn(null);
@@ -214,16 +216,14 @@ const GrnReturn = () => {
     }
   };
 
-  // ==========================================
-  // 🌟 DETAIL / EDIT / PRINT VIEW 
-  // ==========================================
+  
   if (activeReturn) {
     const isCompleted = String(activeReturn.status || '').toUpperCase() === 'COMPLETED' || String(activeReturn.status || '').toUpperCase() === 'COMPLETE';
 
     return (
       <div className="w-full space-y-6 text-sm font-normal text-slate-700 p-6 md:p-8 bg-slate-50 min-h-screen">
         
-        {/* 🌟 ප්‍රින්ට් වන විට ප්‍රකාශන පෙට්ටිය හැර ඉතිරි සියල්ල සැඟවීමට සහ පේපර් එක පිරිසිදුව තබා ගැනීමට */}
+       
         <style>{`
           @media print {
             body * {
@@ -355,7 +355,7 @@ const GrnReturn = () => {
             <div className="border-t pt-2">Authorized Signature</div>
           </div>
 
-          {/* 🌟 ස්ටේටස් එක Completed නම් Submit බටන් එක මුළුමනින්ම සඟවා තැබේ */}
+         
           {!isCompleted && (
             <div className="flex justify-end items-center gap-3 bg-white p-5 rounded-xl border border-slate-100 shadow-xs no-print pt-6">
               <button 
@@ -382,9 +382,7 @@ const GrnReturn = () => {
     );
   }
 
-  // ==========================================
-  // 🌟 MAIN LIST VIEW
-  // ==========================================
+
   return (
     <div className="w-full space-y-6 text-sm font-normal text-slate-700 p-6 md:p-8 bg-slate-50 min-h-screen">
       

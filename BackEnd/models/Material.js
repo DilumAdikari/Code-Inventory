@@ -4,7 +4,7 @@ const MaterialSchema = new mongoose.Schema({
   itemCode: { 
     type: String, 
     required: true, 
-    unique: true, // 🌟 අලුත් එක විතරක් unique විය යුතුයි
+    unique: true, 
     trim: true 
   },
   materialName: { 

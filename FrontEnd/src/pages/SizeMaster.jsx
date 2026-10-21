@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, Trash2, Edit3, X, Check, Scale } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../api/config";
+import { confirmDialog } from '../components/AppDialog';
 
 const SizeMaster = () => {
   const [sizes, setSizes] = useState([]);
@@ -17,7 +19,7 @@ const SizeMaster = () => {
   const fetchSizes = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('http://192.168.1.30:5003/api/sizes');
+      const res = await axios.get(`${API_URL}/sizes`);
       setSizes(res.data || []);
       setLoading(false);
     } catch (err) {
@@ -37,9 +39,9 @@ const SizeMaster = () => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to remove this size definition?")) {
+    if (await confirmDialog("Are you sure you want to remove this size definition?")) {
       try {
-        await axios.delete(`http://192.168.1.30:5003/api/sizes/${id}`);
+        await axios.delete(`${API_URL}/sizes/${id}`);
         fetchSizes();
       } catch (err) {
         alert("Failed to delete size matrix node.");
@@ -53,7 +55,7 @@ const SizeMaster = () => {
 
     try {
       setSubmitting(true);
-      await axios.post('http://192.168.1.30:5003/api/sizes/save', {
+      await axios.post(`${API_URL}/sizes/save`, {
         sizeId,
         sizeCode: sizeCode.trim(),
         sizeDescription: sizeDescription.trim(),

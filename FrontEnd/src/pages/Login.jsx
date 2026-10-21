@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { User, Lock, Eye, EyeOff, Loader2, AlertCircle, Settings } from 'lucide-react';
-
+import { API_URL } from "../api/config"; 
 const Login = () => {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
@@ -22,7 +22,7 @@ const Login = () => {
     setError('');
 
     try {
-      const response = await axios.post('http://192.168.1.30:5003/api/auth/login', {
+      const response = await axios.post(`${API_URL}/auth/login`, { 
         username,
         password
       });

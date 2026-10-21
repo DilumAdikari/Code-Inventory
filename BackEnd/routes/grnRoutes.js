@@ -5,10 +5,14 @@ const mongoose = require('mongoose');
 const GRN = require('../models/GRN');
 const Material = require('../models/Material');
 const FinishedGood = require('../models/FinishedGood');
-const Stock = require('../models/Stock');
 const TransactionType = require('../models/TransactionType');
 const Approval = require('../models/Approval');
 const Workflow = require('../models/Workflow');
+const {
+  toObjectIdOrNull,
+  normalizeGrnItems,
+  processGrnStockUpdate
+} = require('../utils/grnStock');
 
 // Safe model loading to prevent crashes
 let PurchaseOrder = null;
@@ -17,41 +21,7 @@ try { PurchaseOrder = mongoose.models.PurchaseOrder || require('../models/Purcha
 let MaterialIssuing = null;
 try { MaterialIssuing = mongoose.models.MaterialIssuing || require('../models/MaterialIssuing'); } catch (e) { MaterialIssuing = null; }
 
-// ✅ HELPER: Process Stock Update (Reusable function when any GRN becomes Completed)
-const processGrnStockUpdate = async (grnDoc) => {
-  if (grnDoc.status === 'Completed' && grnDoc.items && grnDoc.items.length > 0) {
-    for (let item of grnDoc.items) {
-      if (item.material && item.storeLocation) {
-        await Material.findByIdAndUpdate(item.material, { $inc: { stockBalance: Number(item.receivedQty || 0) } }).catch(() => {});
-        await FinishedGood.findByIdAndUpdate(item.material, { $inc: { stockBalance: Number(item.receivedQty || 0) } }).catch(() => {});
-        
-        console.log('📌 SAVING STOCK FOR ITEM (Size Check):', {
-          material: item.material,
-          color: item.color,
-          size: item.size, // මෙතන ObjectId එකක් තියෙනවද බලමු
-          warehouse: item.storeLocation,
-          unitPrice: Number(item.unitPrice || 0),
-          qty: Number(item.receivedQty || 0)
-        });
-
-        // 🌟 Stock එකට Size එක සමඟ නිවැරදිව රෙකෝඩ් කිරීම
-        await Stock.findOneAndUpdate(
-          { 
-            material: item.material, 
-            color: item.color, 
-            size: item.size || null, 
-            warehouse: item.storeLocation, 
-            unitPrice: Number(item.unitPrice || 0) 
-          },
-          { $inc: { qty: Number(item.receivedQty || 0) } },
-          { upsert: true, new: true }
-        );
-      }
-    }
-  }
-};
-
-// ✅ HELPER
+// HELPER
 const getApproverFromWorkflow = async (workflowId) => {
   if (!workflowId) return null;
   const wfDoc = await Workflow.findById(workflowId)
@@ -74,7 +44,7 @@ const getApproverFromWorkflow = async (workflowId) => {
   return null;
 };
 
-// ✅ 1. GET ALL
+//  1. GET ALL
 router.get('/', async (req, res) => {
   try {
     const grnList = await GRN.find()
@@ -100,7 +70,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ✅ 2. ALL ITEMS SEARCH
+// 2. ALL ITEMS SEARCH
 router.get('/all-items-search', async (req, res) => {
   try {
     const rawMaterials = await Material.find().populate('sizes').lean();
@@ -133,7 +103,7 @@ router.get('/all-items-search', async (req, res) => {
   }
 });
 
-// ✅ 3. APPROVED POs
+//  3. APPROVED POs
 router.get('/approved-pos', async (req, res) => {
   try {
     if (!PurchaseOrder) return res.json([]);
@@ -150,7 +120,7 @@ router.get('/approved-pos', async (req, res) => {
   }
 });
 
-// ✅ 4. ISSUING RECORDS
+//  4. ISSUING RECORDS
 router.get('/issuing-records', async (req, res) => {
   try {
     if (!MaterialIssuing) return res.json([]);
@@ -162,7 +132,7 @@ router.get('/issuing-records', async (req, res) => {
   }
 });
 
-// ✅ 5. SAVE OR UPDATE GRN
+//  5. SAVE OR UPDATE GRN
 router.post('/save', async (req, res) => {
   const {
     grnId, grnDate, grnType, workflow, purchaseOrder, materialIssuing,
@@ -173,40 +143,34 @@ router.post('/save', async (req, res) => {
   try {
     let grnDoc = null;
 
-    const formattedItems = items ? items.map(item => ({
-      material: mongoose.Types.ObjectId.isValid(item.material?._id || item.material)
-        ? new mongoose.Types.ObjectId(item.material?._id || item.material) : null,
-      color: mongoose.Types.ObjectId.isValid(item.color?._id || item.color)
-        ? new mongoose.Types.ObjectId(item.color?._id || item.color) : null,
-      size: mongoose.Types.ObjectId.isValid(item.size?._id || item.size)
-        ? new mongoose.Types.ObjectId(item.size?._id || item.size) : null,
+    const rawItems = items ? items.map(item => ({
+      material: toObjectIdOrNull(item.material),
+      color: toObjectIdOrNull(item.color),
+      size: toObjectIdOrNull(item.size),
       uom: item.uom || 'Pcs',
       orderedQty: Number(item.orderedQty || 0),
       receivedQty: Number(item.receivedQty || 0),
       unitPrice: Number(item.unitPrice || 0),
       totalPrice: Number(item.totalPrice || 0),
-      storeLocation: mongoose.Types.ObjectId.isValid(item.storeLocation?._id || item.storeLocation)
-        ? new mongoose.Types.ObjectId(item.storeLocation?._id || item.storeLocation)
-        : (mongoose.Types.ObjectId.isValid(globalWarehouse) ? new mongoose.Types.ObjectId(globalWarehouse) : null)
+      storeLocation: toObjectIdOrNull(item.storeLocation) || toObjectIdOrNull(globalWarehouse)
     })).filter(item => item.material !== null) : [];
 
-    const grnTypeId = mongoose.Types.ObjectId.isValid(grnType) ? new mongoose.Types.ObjectId(grnType) : null;
-    const workflowId = mongoose.Types.ObjectId.isValid(workflow) ? new mongoose.Types.ObjectId(workflow) : null;
-    const poId = mongoose.Types.ObjectId.isValid(purchaseOrder) ? new mongoose.Types.ObjectId(purchaseOrder) : null;
-    const issuingId = mongoose.Types.ObjectId.isValid(materialIssuing) ? new mongoose.Types.ObjectId(materialIssuing) : null;
-    const supplierId = mongoose.Types.ObjectId.isValid(supplier) ? new mongoose.Types.ObjectId(supplier) : null;
+    // Colourless / sizeless materials get color / size = null
+    const { items: formattedItems, missing } = await normalizeGrnItems(rawItems);
+
+    const grnTypeId = toObjectIdOrNull(grnType);
+    const workflowId = toObjectIdOrNull(workflow);
+    const poId = toObjectIdOrNull(purchaseOrder);
+    const issuingId = toObjectIdOrNull(materialIssuing);
+    const supplierId = toObjectIdOrNull(supplier);
     const finalCreator = createdBy || created_by || 'SYSTEM';
 
     if (!grnTypeId) {
       return res.status(400).json({ message: 'Transaction Type is required for GRN.' });
     }
 
-    if (status === 'Completed') {
-      for (let item of formattedItems) {
-        if (!item.color || !item.storeLocation || !item.size) {
-          return res.status(400).json({ message: 'Color shade, Size and Store location are required before completing GRN.' });
-        }
-      }
+    if (status === 'Completed' && missing.length > 0) {
+      return res.status(400).json({ message: missing.join('; ') });
     }
 
     if (grnId && mongoose.Types.ObjectId.isValid(grnId)) {
@@ -240,7 +204,7 @@ router.post('/save', async (req, res) => {
       await grnDoc.save();
     }
 
-    // 🌟 If saved directly as Completed, update stock
+    // If saved directly as Completed, update stock
     await processGrnStockUpdate(grnDoc);
 
     return res.status(200).json(grnDoc);
@@ -250,7 +214,7 @@ router.post('/save', async (req, res) => {
   }
 });
 
-// ✅ 6. SUBMIT FOR APPROVAL
+//  6. SUBMIT FOR APPROVAL
 const submitApprovalHandler = async (req, res) => {
   const { createdBy } = req.body;
   try {
@@ -263,6 +227,14 @@ const submitApprovalHandler = async (req, res) => {
 
     if (!grn.workflow) {
       return res.status(400).json({ message: "No workflow assigned to this GRN. Please select a workflow when creating the GRN." });
+    }
+
+    // Check colour / size / store location against the material setup
+    const { missing } = await normalizeGrnItems(
+      grn.items.map(item => (item.toObject ? item.toObject() : item))
+    );
+    if (missing.length > 0) {
+      return res.status(400).json({ message: `Cannot submit for approval: ${missing.join('; ')}` });
     }
 
     const targetApprover = await getApproverFromWorkflow(grn.workflow);
@@ -297,7 +269,7 @@ const submitApprovalHandler = async (req, res) => {
 router.post('/submit-approval/:id', submitApprovalHandler);
 router.post('/submit/:id', submitApprovalHandler);
 
-// 🌟 NOTE: Whenever an approval is accepted elsewhere and GRN status becomes 'Completed', 
-// ensure processGrnStockUpdate(grnDoc) is triggered there if managed in approvals route.
+// NOTE: When an approval is accepted elsewhere and the GRN becomes 'Completed',
+// call processGrnStockUpdate(grnDoc) from '../utils/grnStock' so colourless stock is handled the same way.
 
 module.exports = router;

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Plus, Trash2, ArrowLeft, Loader2, Check, AlertCircle, CheckCircle2, X, Printer, Search } from 'lucide-react';
 import { colorApi } from '../api/colorApi';
+import { API_URL } from "../api/config";
 
 const SalesOrderDetails = () => {
   const { id } = useParams();
@@ -41,7 +42,7 @@ const SalesOrderDetails = () => {
     }, 4000);
   };
 
-  // Dropdown එකෙන් පිටත ක්ලික් කළහොත් එය වැසීමට
+ 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -55,10 +56,10 @@ const SalesOrderDetails = () => {
   const loadOrderData = async () => {
     try {
       const [orderRes, colorRes, fgRes, sizeRes] = await Promise.all([
-        axios.get(`http://192.168.1.30:5003/api/sales-orders/${id}`),
+        axios.get(`${API_URL}/sales-orders/${id}`),
         colorApi.getAllColors(),
-        axios.get('http://192.168.1.30:5003/api/finished-goods').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/sizes').catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/finished-goods`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/sizes`).catch(() => ({ data: [] }))
       ]);
       
       setOrder(orderRes.data);
@@ -81,7 +82,7 @@ const SalesOrderDetails = () => {
     loadOrderData();
   }, [id]);
 
-  // 🌟 Material Change -> Filter Colors & Sizes
+  //  Material Change -> Filter Colors & Sizes
   useEffect(() => {
     if (!selectedMaterial) {
       setFilteredColors([]);
@@ -149,7 +150,7 @@ const SalesOrderDetails = () => {
         unitPrice: Number(price)
       };
 
-      await axios.post(`http://192.168.1.30:5003/api/sales-orders/${id}/items`, newItemPayload);
+      await axios.post(`${API_URL}/sales-orders/${id}/items`, newItemPayload);
       await loadOrderData(); 
       
       showNotification('success', 'Breakdown line added successfully!');
@@ -173,7 +174,7 @@ const SalesOrderDetails = () => {
     setActionLoading(true);
     try {
       const currentUsername = localStorage.getItem('username') || 'DILUM';
-      const response = await axios.put(`http://192.168.1.30:5003/api/sales-orders/${id}/status`, {
+      const response = await axios.put(`${API_URL}/sales-orders/${id}/status`, {
         status: 'Pending Approval',
         workflowId: order.workflowTemplate, 
         requestedBy: currentUsername
@@ -202,7 +203,7 @@ const SalesOrderDetails = () => {
     setDeleteModal({ isOpen: false, itemId: null }); 
     
     try {
-      await axios.delete(`http://192.168.1.30:5003/api/sales-orders/${id}/items/${itemId}`);
+      await axios.delete(`${API_URL}/sales-orders/${id}/items/${itemId}`);
       await loadOrderData();
       showNotification('success', 'Row item removed successfully.');
     } catch (err) {
@@ -247,13 +248,13 @@ const SalesOrderDetails = () => {
     return typeof item.material === 'string' ? item.material : 'Finished Good Style';
   };
 
-  // 🌟 ටේබල් එකේ සයිස් එකේ නම (sizeCode) නිවැරදිව පෙන්වා ගැනීමට හෙල්පර් פන්ක්ෂන් එක
+ 
   const getSizeDisplayName = (itemSize) => {
     if (!itemSize) return 'N/A';
     if (typeof itemSize === 'object') {
       return itemSize.sizeCode || itemSize.sizeDescription || itemSize.name || 'N/A';
     }
-    // itemSize එක ID එකක් ලෙස පැමිණියහොත් allSizes මාස්ටර් ලිස්ට් එකෙන් සෙවීම
+    
     const foundSize = allSizes.find(s => String(s._id) === String(itemSize) || String(s.id) === String(itemSize));
     if (foundSize) {
       return foundSize.sizeCode || foundSize.sizeDescription || foundSize.name || itemSize;
@@ -397,7 +398,7 @@ const SalesOrderDetails = () => {
             </select>
           </div>
 
-          {/* 🌟 සයිස් නම (sizeCode) නිවැරදිව පෙන්වීම සහ ID එක value ලෙස යැවීම */}
+         
           <div>
             <label className="block text-[11px] text-slate-400 font-medium uppercase mb-1.5">Size *</label>
             <select 
@@ -480,7 +481,7 @@ const SalesOrderDetails = () => {
                     <span className="w-3 h-3 rounded-full border border-slate-200" style={{ backgroundColor: item.color?.code || '#ccc' }}></span>
                     {item.color?.name || item.color?.colorName || 'Default'}
                   </td>
-                  {/* 🌟 ටේබල් එකේ සයිස් නම නිවැරදිව පෙන්වීම */}
+                  
                   <td className="py-4 px-6 text-center">
                     <span className="px-2 py-0.5 bg-slate-100 rounded text-xs font-medium text-slate-700">
                       {getSizeDisplayName(item.size)}

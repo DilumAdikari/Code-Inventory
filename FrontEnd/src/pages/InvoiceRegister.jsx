@@ -1,6 +1,51 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, FileText, X, Printer, ArrowLeft, Search, Send, CheckCircle, AlertCircle, Save } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../api/config";
+import { confirmDialog } from '../components/AppDialog';
+
+// Returns the value as an array, or an empty array if it is not one
+const toArray = (value) => (Array.isArray(value) ? value : []);
+
+// Returns the ID string for a value that may be an ID, a populated object, or empty
+const getId = (value) => {
+  if (value && typeof value === 'object') return String(value._id || '');
+  return String(value || '');
+};
+
+// Returns the on-hand qty for one material + colour + size in one warehouse
+const getStockQty = (materialId, colorId, sizeId, warehouseId, stockList) => {
+  const matId = getId(materialId);
+  const colId = getId(colorId);
+  const szId = getId(sizeId);
+  const whId = getId(warehouseId);
+  if (!matId || !whId) return 0;
+
+  const entry = stockList.find(s =>
+    getId(s.material) === matId &&
+    getId(s.color) === colId &&
+    getId(s.size) === szId &&
+    getId(s.warehouse) === whId
+  );
+
+  return entry ? Number(entry.qty || 0) : 0;
+};
+
+// Returns the total qty already entered in OTHER rows for the same material + colour + size
+const getAllocatedQty = (rows, rowIndex, materialId, colorId, sizeId) => {
+  const matId = getId(materialId);
+  const colId = getId(colorId);
+  const szId = getId(sizeId);
+
+  return rows.reduce((sum, r, idx) => {
+    if (idx === rowIndex) return sum;
+    const sameItem =
+      getId(r.material) === matId &&
+      getId(r.color) === colId &&
+      getId(r.size) === szId;
+    return sameItem ? sum + Number(r.issuedQty || 0) : sum;
+  }, 0);
+};
 
 const InvoiceRegister = () => {
   const [invoiceList, setInvoiceList] = useState([]);
@@ -35,31 +80,32 @@ const InvoiceRegister = () => {
   const [items, setItems] = useState([]);
   const currentUsername = localStorage.getItem('username') || 'ADMIN';
 
+  // Loads every list this page needs from the server
   const loadInvoiceData = async () => {
     try {
       setLoading(true);
       const [invRes, searchRes, whRes, colRes, custRes, wfRes, stockRes, uomRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/invoices').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/grn/all-items-search').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/warehouses').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/colors').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/customers').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/workflows').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/stocks').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/uoms').catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/invoices`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/grn/all-items-search`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/warehouses`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/colors`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/customers`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/workflows`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/stocks`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/uoms`).catch(() => ({ data: [] }))
       ]);
 
       const parsedItems = Array.isArray(searchRes.data) ? searchRes.data : (searchRes.data?.data || []);
       const parsedCustomers = Array.isArray(custRes.data) ? custRes.data : (custRes.data?.data || custRes.data?.customers || []);
       const parsedUoms = Array.isArray(uomRes.data) ? uomRes.data : (uomRes.data?.data || []);
 
-      setInvoiceList(invRes.data || []);
+      setInvoiceList(toArray(invRes.data));
       setSearchableItems(parsedItems);
-      setWarehouses(whRes.data || []);
-      setColors(colRes.data || []);
+      setWarehouses(toArray(whRes.data));
+      setColors(toArray(colRes.data));
       setCustomers(parsedCustomers);
-      setWorkflows(wfRes.data || []);
-      setStocks(stockRes.data || []);
+      setWorkflows(toArray(wfRes.data));
+      setStocks(toArray(stockRes.data));
       setUoms(parsedUoms);
       setLoading(false);
     } catch (err) {
@@ -68,9 +114,21 @@ const InvoiceRegister = () => {
     }
   };
 
+  // Reloads only the stock list and returns it, so checks use the latest quantities
+  const refreshStocks = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/stocks`);
+      const latest = toArray(res.data);
+      setStocks(latest);
+      return latest;
+    } catch (err) {
+      console.error('Failed to refresh stock:', err);
+      return stocks;
+    }
+  };
+
   useEffect(() => { loadInvoiceData(); }, []);
 
-  // 🌟 UOM එක නිවැරදිව abbreviation එකට පරිවර්තනය කරන හෙල්පර් ෆන්ක්ෂන් එක
   const resolveUomString = (uomData, matchedItem) => {
     if (uomData) {
       if (typeof uomData === 'object' && uomData !== null) {
@@ -99,28 +157,11 @@ const InvoiceRegister = () => {
     return 'Pcs';
   };
 
-  // 🌟 ✅ ස්ටොක් සර්ච් කිරීමේ දෝෂය සම්පූර්ණයෙන්ම නිවැරදි කළ getAvailableStock ෆන්ක්ෂන් එක
-  const getAvailableStock = (materialId, colorId, sizeId, warehouseId) => {
-    if (!materialId || !warehouseId) return 0;
-    
-    const cleanMatId = materialId?._id ? String(materialId._id) : String(materialId || '');
-    const cleanColId = colorId?._id ? String(colorId._id) : String(colorId || '');
-    const cleanSizeId = sizeId?._id ? String(sizeId._id) : String(sizeId || '');
-    const cleanWhId = warehouseId?._id ? String(warehouseId._id) : String(warehouseId || '');
-
-    const stockEntry = stocks.find(s => {
-      const sMatId = s.material?._id ? String(s.material._id) : (typeof s.material === 'object' ? String(s.material?._id || '') : String(s.material || ''));
-      const sColId = s.color?._id ? String(s.color._id) : (typeof s.color === 'object' ? String(s.color?._id || '') : String(s.color || ''));
-      const sSizeId = s.size?._id ? String(s.size._id) : (typeof s.size === 'object' ? String(s.size?._id || '') : String(s.size || ''));
-      const sWhId = s.warehouse?._id ? String(s.warehouse._id) : (typeof s.warehouse === 'object' ? String(s.warehouse?._id || '') : String(s.warehouse || ''));
-
-      return sMatId === cleanMatId &&
-             sColId === cleanColId &&
-             sSizeId === cleanSizeId &&
-             sWhId === cleanWhId;
-    });
-
-    return stockEntry ? Number(stockEntry.qty || 0) : 0;
+  // Remaining stock for one row = on-hand stock minus what other rows already take
+  const getRemainingStock = (rowIndex, row, rowList = items) => {
+    const onHand = getStockQty(row.material, row.color, row.size, form.globalWarehouse, stocks);
+    const allocated = getAllocatedQty(rowList, rowIndex, row.material, row.color, row.size);
+    return Math.max(0, onHand - allocated);
   };
 
   const handleRowClick = (inv) => {
@@ -151,7 +192,7 @@ const InvoiceRegister = () => {
           ...item,
           material: matId ? String(matId) : '',
           color: item.color?._id || item.color || '',
-          size: item.size?._id || item.size || '', 
+          size: item.size?._id || item.size || '',
           uom: finalUom,
           storeLocation: item.storeLocation?._id || item.storeLocation || warehouseId,
           searchQuery: `[${matCode}] ${matName}`
@@ -180,7 +221,7 @@ const InvoiceRegister = () => {
       setInitLoading(true);
       const initialItems = [{ material: '', color: '', size: '', uom: 'Pcs', issuedQty: 0, unitPrice: 0, totalPrice: 0, storeLocation: form.globalWarehouse, searchQuery: '' }];
 
-      const res = await axios.post('http://192.168.1.30:5003/api/invoices/save', {
+      const res = await axios.post(`${API_URL}/invoices/save`, {
         invoiceDate: form.invoiceDate,
         customerName: form.customerName,
         globalWarehouse: form.globalWarehouse,
@@ -199,6 +240,7 @@ const InvoiceRegister = () => {
       setIsListView(false);
       setIsGridExpanded(true);
       setItems(initialItems);
+      refreshStocks();
     } catch (err) {
       alert("Failed to initialize Invoice.");
     } finally {
@@ -206,56 +248,69 @@ const InvoiceRegister = () => {
     }
   };
 
+  // Sets the material on a row (colour and size are cleared so the stock check is redone)
   const handleItemSelect = (index, selectedItem) => {
     if (activeStatus !== 'Draft') return;
-    const updatedItems = [...items];
-    updatedItems[index].material = selectedItem._id;
-    updatedItems[index].color = '';
-    updatedItems[index].size = ''; 
-    
-    updatedItems[index].uom = resolveUomString(selectedItem.uom, selectedItem);
 
-    updatedItems[index].unitPrice = selectedItem.unitPrice || 0;
-    updatedItems[index].searchQuery = `[${selectedItem.itemCode}] ${selectedItem.itemName}`;
-    updatedItems[index].storeLocation = updatedItems[index].storeLocation || form.globalWarehouse;
+    const updatedItems = items.map((row, i) => {
+      if (i !== index) return row;
+      const qty = Number(row.issuedQty || 0);
+      const unitPrice = selectedItem.unitPrice || 0;
+      return {
+        ...row,
+        material: selectedItem._id,
+        color: '',
+        size: '',
+        uom: resolveUomString(selectedItem.uom, selectedItem),
+        unitPrice,
+        totalPrice: qty * Number(unitPrice),
+        searchQuery: `[${selectedItem.itemCode}] ${selectedItem.itemName}`,
+        storeLocation: row.storeLocation || form.globalWarehouse
+      };
+    });
 
-    const qty = Number(updatedItems[index].issuedQty || 0);
-    updatedItems[index].totalPrice = qty * Number(updatedItems[index].unitPrice || 0);
     setItems(updatedItems);
   };
 
   const handleItemRowChange = (index, field, value) => {
     if (activeStatus !== 'Draft') return;
-    const updatedItems = [...items];
 
-    if (field === 'issuedQty') {
-      const numValue = Number(value) || 0;
-      const item = updatedItems[index];
+    const current = items[index];
+    const updatedRow = { ...current, [field]: value };
 
-      if (item.material && form.globalWarehouse) {
-        const availableStock = getAvailableStock(item.material, item.color, item.size, form.globalWarehouse);
+    // Qty must fit in the remaining stock for the row's material, colour and size
+    if (field === 'issuedQty' || field === 'color' || field === 'size') {
+      const tentativeItems = items.map((row, i) => (i === index ? updatedRow : row));
+      const remaining = getRemainingStock(index, updatedRow, tentativeItems);
+      const requestedQty = Number(updatedRow.issuedQty || 0);
 
-        if (availableStock <= 0 && numValue > 0) {
-          alert(`⚠️ No stock available for this item, color and size in the selected warehouse!\n\nAvailable: 0\nCannot enter any quantity.`);
-          return;
-        }
-
-        if (numValue > availableStock) {
-          alert(`⚠️ Insufficient stock!\n\nAvailable: ${availableStock.toLocaleString()}\nRequested: ${numValue.toLocaleString()}`);
-          return;
+      if (updatedRow.material && form.globalWarehouse) {
+        if (field === 'issuedQty') {
+          if (remaining <= 0 && requestedQty > 0) {
+            alert(`⚠️ No stock available for this item, colour and size in the selected warehouse.\n\nRemaining: 0`);
+            return;
+          }
+          if (requestedQty > remaining) {
+            alert(`⚠️ Insufficient stock!\n\nRemaining: ${remaining.toLocaleString()}\nRequested: ${requestedQty.toLocaleString()}`);
+            return;
+          }
+        } else if (requestedQty > remaining) {
+          // Colour or size changed and the entered qty no longer fits: clamp it
+          alert(`⚠️ Stock for this colour/size is ${remaining.toLocaleString()}. Issue Qty has been adjusted.`);
+          updatedRow.issuedQty = remaining;
         }
       }
     }
 
-    updatedItems[index][field] = value;
-    if (!updatedItems[index].storeLocation) {
-      updatedItems[index].storeLocation = form.globalWarehouse;
+    if (!updatedRow.storeLocation) {
+      updatedRow.storeLocation = form.globalWarehouse;
     }
 
-    const qty = Number(updatedItems[index].issuedQty || 0);
-    const price = Number(updatedItems[index].unitPrice || 0);
-    updatedItems[index].totalPrice = qty * price;
-    setItems(updatedItems);
+    const qty = Number(updatedRow.issuedQty || 0);
+    const price = Number(updatedRow.unitPrice || 0);
+    updatedRow.totalPrice = qty * price;
+
+    setItems(items.map((row, i) => (i === index ? updatedRow : row)));
   };
 
   const getFilteredColorsForMaterial = (materialId) => {
@@ -289,7 +344,7 @@ const InvoiceRegister = () => {
       const formattedItems = validItems.map(item => ({
         material: item.material?._id || item.material,
         color: item.color?._id || item.color || null,
-        size: item.size?._id || item.size || null, 
+        size: item.size?._id || item.size || null,
         uom: item.uom || 'Pcs',
         issuedQty: Number(item.issuedQty || 0),
         unitPrice: Number(item.unitPrice || 0),
@@ -297,7 +352,7 @@ const InvoiceRegister = () => {
         storeLocation: item.storeLocation || form.globalWarehouse
       }));
 
-      await axios.post('http://192.168.1.30:5003/api/invoices/save', {
+      await axios.post(`${API_URL}/invoices/save`, {
         invoiceId,
         invoiceDate: form.invoiceDate,
         customerName: form.customerName,
@@ -328,59 +383,69 @@ const InvoiceRegister = () => {
       return;
     }
 
+    // Use fresh stock so the check is not based on an old page load
+    const latestStocks = await refreshStocks();
+
     const errors = [];
 
-    for (let i = 0; i < validItems.length; i++) {
-      const item = validItems[i];
-      const rowNum = i + 1;
+    // Total requested per material + colour + size, so duplicate rows cannot exceed stock
+    const requestedTotals = {};
+    validItems.forEach(r => {
+      const key = `${getId(r.material)}|${getId(r.color)}|${getId(r.size)}`;
+      requestedTotals[key] = (requestedTotals[key] || 0) + Number(r.issuedQty || 0);
+    });
 
-      const itemName = searchableItems.find(m => String(m._id) === String(item.material))?.itemName || `Row ${rowNum}`;
+    validItems.forEach((item, i) => {
+      const rowNum = i + 1;
+      const itemName = searchableItems.find(m => String(m._id) === String(getId(item.material)))?.itemName || `Row ${rowNum}`;
       const issuedQty = Number(item.issuedQty || 0);
-      const availableStock = getAvailableStock(item.material, item.color, item.size, form.globalWarehouse);
+      const onHand = getStockQty(item.material, item.color, item.size, form.globalWarehouse, latestStocks);
+      const key = `${getId(item.material)}|${getId(item.color)}|${getId(item.size)}`;
+      const totalRequested = requestedTotals[key] || 0;
 
       if (!item.color) {
-        errors.push(`Row ${rowNum} (${itemName}): Please select a color.`);
-        continue;
+        errors.push(`Row ${rowNum} (${itemName}): Please select a colour.`);
+        return;
       }
 
       if (!item.size) {
         errors.push(`Row ${rowNum} (${itemName}): Please select a size.`);
-        continue;
+        return;
       }
 
       if (issuedQty <= 0) {
         errors.push(`Row ${rowNum} (${itemName}): Issue Qty must be greater than 0.`);
-        continue;
+        return;
       }
 
-      if (availableStock <= 0) {
-        errors.push(`Row ${rowNum} (${itemName}): No stock available for this color/size in the selected warehouse.`);
-        continue;
+      if (onHand <= 0) {
+        errors.push(`Row ${rowNum} (${itemName}): No stock available for this colour/size in the selected warehouse.`);
+        return;
       }
 
-      if (issuedQty > availableStock) {
-        errors.push(`Row ${rowNum} (${itemName}): Insufficient stock. Available: ${availableStock}, Requested: ${issuedQty}`);
-        continue;
+      if (totalRequested > onHand) {
+        errors.push(`Row ${rowNum} (${itemName}): Insufficient stock. Available: ${onHand}, Total requested for this colour/size: ${totalRequested}`);
+        return;
       }
 
       if (Number(item.unitPrice || 0) <= 0) {
         errors.push(`Row ${rowNum} (${itemName}): Unit Price must be greater than 0.`);
-        continue;
+        return;
       }
-    }
+    });
 
     if (errors.length > 0) {
       alert("⚠️ Cannot submit invoice:\n\n" + errors.join('\n'));
       return;
     }
 
-    if (!window.confirm("Submit this Invoice for approval?")) return;
+    if (!await confirmDialog("Submit this Invoice for approval?")) return;
 
     try {
       setApprovaling(true);
       await handleSaveDraft();
       const res = await axios.post(
-        `http://192.168.1.30:5003/api/invoices/submit-approval/${invoiceId}`,
+        `${API_URL}/invoices/submit-approval/${invoiceId}`,
         { createdBy: currentUsername }
       );
 
@@ -554,6 +619,7 @@ const InvoiceRegister = () => {
                   <tr>
                     <th className="py-3 px-4 w-5 text-center">#</th>
                     <th className="py-3 px-4 w-1/4">Material / Finished Good</th>
+                    <th className="py-3 px-4 w-24">Item Code</th>
                     <th className="py-3 px-4 w-32">Color *</th>
                     <th className="py-3 px-4 w-32">Size *</th>
                     <th className="py-3 px-4 w-16 text-center">UOM</th>
@@ -573,9 +639,9 @@ const InvoiceRegister = () => {
                       (m.itemName || '').toLowerCase().includes(currentSearch.toLowerCase()) ||
                       (m.itemCode || '').toLowerCase().includes(currentSearch.toLowerCase())
                     );
-                    
-                    const matchedMat = searchableItems.find(m => String(m._id) === String(row.material?._id || row.material));
-                    const availableStock = getAvailableStock(row.material, row.color, row.size, form.globalWarehouse);
+
+                    const matchedMat = searchableItems.find(m => String(m._id) === getId(row.material));
+                    const remainingStock = getRemainingStock(index, row);
                     const displayUom = resolveUomString(row.uom, matchedMat);
 
                     return (
@@ -591,9 +657,9 @@ const InvoiceRegister = () => {
                                 value={row.searchQuery || ''}
                                 onChange={(e) => {
                                   const val = e.target.value;
-                                  const updated = [...items];
-                                  updated[index].searchQuery = val;
-                                  if (!val) updated[index].material = '';
+                                  const updated = items.map((r, i) => (
+                                    i === index ? { ...r, searchQuery: val, material: val ? r.material : '' } : r
+                                  ));
                                   setItems(updated);
                                 }}
                                 className="w-full bg-transparent text-xs focus:outline-none"
@@ -611,26 +677,27 @@ const InvoiceRegister = () => {
                             )}
                           </div>
                         </td>
+                        <td className="py-2.5 px-4 text-xs font-mono text-slate-600">{matchedMat?.itemCode || row.resolvedCode || '-'}</td>
                         <td className="py-2.5 px-4">
-                          <select value={row.color?._id || row.color} onChange={(e) => handleItemRowChange(index, 'color', e.target.value)} disabled={!row.material} className="w-full px-2 py-1.5 bg-slate-50 border rounded-lg text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50">
+                          <select value={getId(row.color)} onChange={(e) => handleItemRowChange(index, 'color', e.target.value)} disabled={!row.material} className="w-full px-2 py-1.5 bg-slate-50 border rounded-lg text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50">
                             <option value="">{row.material ? "Select Color" : "Choose Item First"}</option>
                             {filteredColors.map(c => <option key={c._id} value={c._id}>{c.colorName || c.name} ({c.colorCode || c.code})</option>)}
                           </select>
                         </td>
-                        
+
                         <td className="py-2.5 px-4">
-                          <select value={row.size?._id || row.size} onChange={(e) => handleItemRowChange(index, 'size', e.target.value)} disabled={!row.material} className="w-full px-2 py-1.5 bg-slate-50 border rounded-lg text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50">
+                          <select value={getId(row.size)} onChange={(e) => handleItemRowChange(index, 'size', e.target.value)} disabled={!row.material} className="w-full px-2 py-1.5 bg-slate-50 border rounded-lg text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50">
                             <option value="">{row.material ? "Select Size" : "Choose Item First"}</option>
                             {filteredSizes.map(s => <option key={s._id} value={s._id}>{s.sizeCode || s.name}</option>)}
                           </select>
                         </td>
 
                         <td className="py-2.5 px-4 text-center text-xs text-slate-400 uppercase">{displayUom}</td>
-                        <td className={`py-2.5 px-4 text-right text-xs font-bold ${availableStock < row.issuedQty ? 'text-rose-600' : 'text-emerald-700'}`}>
-                          {availableStock.toLocaleString()}
+                        <td className={`py-2.5 px-4 text-right text-xs font-bold ${remainingStock < Number(row.issuedQty || 0) ? 'text-rose-600' : 'text-emerald-700'}`}>
+                          {row.material && row.color && row.size ? remainingStock.toLocaleString() : '-'}
                         </td>
                         <td className="py-2.5 px-4 bg-amber-50/40">
-                          <input type="number" min="0" max={availableStock} value={row.issuedQty || ''} onChange={(e) => handleItemRowChange(index, 'issuedQty', e.target.value)} placeholder="0" className="w-full px-2 py-1.5 bg-white border border-amber-200 rounded-lg text-right text-xs focus:outline-none font-bold text-amber-900" />
+                          <input type="number" min="0" max={remainingStock} value={row.issuedQty || ''} onChange={(e) => handleItemRowChange(index, 'issuedQty', e.target.value)} placeholder="0" className="w-full px-2 py-1.5 bg-white border border-amber-200 rounded-lg text-right text-xs focus:outline-none font-bold text-amber-900" />
                         </td>
                         <td className="py-2.5 px-4"><input type="number" value={row.unitPrice || ''} onChange={(e) => handleItemRowChange(index, 'unitPrice', e.target.value)} placeholder="0.00" className="w-full px-2 py-1.5 bg-slate-50 border rounded-lg text-right text-xs focus:outline-none" /></td>
                         <td className="py-2.5 px-4 text-right text-slate-900 font-bold text-xs">{(row.totalPrice || 0).toLocaleString()}</td>
@@ -741,9 +808,10 @@ const InvoiceRegister = () => {
               <thead>
                 <tr className="border-b-2 border-slate-100 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
                   <th className="py-3 px-2 w-8">#</th>
+                  <th className="py-3 px-2">CODE</th>
                   <th className="py-3 px-2">ITEM</th>
                   <th className="py-3 px-2">COLOR</th>
-                  <th className="py-3 px-2">SIZE</th> 
+                  <th className="py-3 px-2">SIZE</th>
                   <th className="py-3 px-2 text-center">UOM</th>
                   <th className="py-3 px-2 text-right">QTY</th>
                   <th className="py-3 px-2 text-right">UNIT PRICE</th>
@@ -752,14 +820,14 @@ const InvoiceRegister = () => {
               </thead>
               <tbody className="divide-y divide-slate-100/60">
                 {items.map((row, i) => {
-                  const matchedSearchItem = searchableItems.find(m => String(m._id) === String(row.material?._id || row.material));
+                  const matchedSearchItem = searchableItems.find(m => String(m._id) === getId(row.material));
                   const displayItemName = row.resolvedName || matchedSearchItem?.itemName || 'Item';
                   const displayItemCode = row.resolvedCode || matchedSearchItem?.itemCode || '';
-                  
-                  const linkedColor = colors.find(c => String(c._id) === String(row.color?._id || row.color));
+
+                  const linkedColor = colors.find(c => String(c._id) === getId(row.color));
                   const displayColor = linkedColor ? (linkedColor.colorName || linkedColor.name) : 'Default';
 
-                  const linkedSizeObj = matchedSearchItem?.sizes?.find(s => String(s._id) === String(row.size?._id || row.size));
+                  const linkedSizeObj = matchedSearchItem?.sizes?.find(s => String(s._id) === getId(row.size));
                   const displaySize = linkedSizeObj ? (linkedSizeObj.sizeCode || linkedSizeObj.name) : (row.size?.sizeCode || 'Default');
 
                   const printUom = resolveUomString(row.uom, matchedSearchItem);
@@ -767,13 +835,14 @@ const InvoiceRegister = () => {
                   return (
                     <tr key={i} className="text-slate-700 font-medium text-xs">
                       <td className="py-4 px-2 text-slate-400">{i + 1}</td>
-                      <td className="py-4 px-2 font-bold text-slate-900">{displayItemCode ? `[${displayItemCode}] ` : ''}{displayItemName}</td>
+                      <td className="py-4 px-2 font-semibold text-slate-700 font-mono">{displayItemCode || '-'}</td>
+                      <td className="py-4 px-2 font-bold text-slate-900">{displayItemName}</td>
                       <td className="py-4 px-2 text-slate-600 font-semibold">{displayColor}</td>
-                      <td className="py-4 px-2 text-slate-600 font-semibold">{displaySize}</td> 
+                      <td className="py-4 px-2 text-slate-600 font-semibold">{displaySize}</td>
                       <td className="py-4 px-2 text-center text-slate-500 uppercase font-semibold">{String(printUom)}</td>
                       <td className="py-4 px-2 text-right font-bold">{row.issuedQty}</td>
-                      <td className="py-4 px-2 text-right">{row.unitPrice?.toFixed(2)}</td>
-                      <td className="py-4 px-2 text-right font-bold text-slate-900">{row.totalPrice?.toFixed(2)}</td>
+                      <td className="py-4 px-2 text-right">{Number(row.unitPrice || 0).toFixed(2)}</td>
+                      <td className="py-4 px-2 text-right font-bold text-slate-900">{Number(row.totalPrice || 0).toFixed(2)}</td>
                     </tr>
                   );
                 })}

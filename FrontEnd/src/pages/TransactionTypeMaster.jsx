@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, Tag, CheckCircle } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../api/config";
 
 const TransactionTypeMaster = () => {
   const [types, setTypes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
-  // 🌟 Requires Issuing සහ අනෙකුත් Behavior Flags සමඟ යාවත්කාලීන කළ Form State එක
+  
   const [form, setForm] = useState({ 
     typeCode: '', 
     typeName: '', 
@@ -15,7 +16,7 @@ const TransactionTypeMaster = () => {
     sourceType: 'with_po',
     requiresPO: true,
     requiresSupplier: true,
-    requiresIssuing: false, // 🌟 අලුතින් එකතු කළ State එක
+    requiresIssuing: false, 
     requiresQC: false,
     allowsPartialReceipt: true
   });
@@ -23,7 +24,7 @@ const TransactionTypeMaster = () => {
   const fetchTypes = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('http://192.168.1.30:5003/api/transaction-types');
+      const res = await axios.get('${API_URL}/transaction-types');
       setTypes(res.data.data || res.data || []);
     } catch (err) {
       console.error(err);
@@ -34,7 +35,7 @@ const TransactionTypeMaster = () => {
 
   useEffect(() => { fetchTypes(); }, []);
 
-  // 🌟 Source Type එක වෙනස් වන විට අදාළ Flags ඔටෝ මැනේජ් වීම
+ 
   const handleSourceTypeChange = (e) => {
     const value = e.target.value;
     let reqPO = false;
@@ -48,7 +49,7 @@ const TransactionTypeMaster = () => {
     } else if (value === 'with_issuing') {
       reqPO = false;
       reqSupplier = false;
-      reqIssuing = true; // 🌟 With Issuing නම් මෙය ඔටෝ ටික් වේ
+      reqIssuing = true; 
     } else if (value === 'open_balance') {
       reqPO = false;
       reqSupplier = false;
@@ -68,14 +69,14 @@ const TransactionTypeMaster = () => {
     e.preventDefault();
     try {
       setSubmitting(true);
-      await axios.post('http://192.168.1.30:5003/api/transaction-types', {
+      await axios.post('${API_URL}/transaction-types', {
         code: form.typeCode,
         typeName: form.typeName,
         description: form.description,
         sourceType: form.sourceType,
         requiresPO: form.requiresPO,
         requiresSupplier: form.requiresSupplier,
-        requiresIssuing: form.requiresIssuing, // 🌟 Backend එකට යැවීම
+        requiresIssuing: form.requiresIssuing, 
         requiresQC: form.requiresQC,
         allowsPartialReceipt: form.allowsPartialReceipt
       });
@@ -180,7 +181,7 @@ const TransactionTypeMaster = () => {
                   <span className="font-medium text-slate-700">Requires Supplier</span>
                 </label>
 
-                {/* 🌟 මෙන්න අලුතින් එකතු කළ Requires Issuing ටික් පෙට්ටිය */}
+                
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Loader2, ClipboardCheck, X, Check, Printer, ArrowLeft, Search, Send, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../api/config";
+import { confirmDialog } from '../components/AppDialog';
 
 const GRNRegister = () => {
   const [grnList, setGrnList] = useState([]);
@@ -8,14 +10,13 @@ const GRNRegister = () => {
   const [searchableItems, setSearchableItems] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [colors, setColors] = useState([]);
-  const [sizes, setSizes] = useState([]); 
+  const [sizes, setSizes] = useState([]);
   const [transactionTypes, setTransactionTypes] = useState([]);
   const [approvedPOs, setApprovedPOs] = useState([]);
   const [issuingList, setIssuingList] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🌟 ✅ අලුතින් එක් කළ Filter & Pagination States
   const [searchGrn, setSearchGrn] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -52,17 +53,17 @@ const GRNRegister = () => {
     try {
       setLoading(true);
       const [grnRes, supRes, matRes, fgRes, whRes, colRes, sizeRes, txRes, poRes, issRes, wfRes] = await Promise.all([
-        axios.get('http://192.168.1.30:5003/api/grn').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/suppliers').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/materials').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/finished-goods').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/warehouses').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/colors').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/sizes').catch(() => ({ data: [] })), 
-        axios.get('http://192.168.1.30:5003/api/transaction-types').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/grn/approved-pos').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/grn/issuing-records').catch(() => ({ data: [] })),
-        axios.get('http://192.168.1.30:5003/api/workflows').catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/grn`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/suppliers`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/materials`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/finished-goods`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/warehouses`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/colors`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/sizes`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/transaction-types`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/grn/approved-pos`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/grn/issuing-records`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/workflows`).catch(() => ({ data: [] }))
       ]);
 
       const combined = [
@@ -83,8 +84,8 @@ const GRNRegister = () => {
       const parsedPOs = Array.isArray(poRes.data) ? poRes.data : (poRes.data?.data || []);
       const parsedIssuing = Array.isArray(issRes.data) ? issRes.data : (issRes.data?.data || []);
       const parsedSuppliers = Array.isArray(supRes.data) ? supRes.data : (supRes.data?.data || []);
-      
-      const rawSizes = sizeRes.data;
+
+      const rawSizes = sizeRes.data || [];
       const parsedSizes = Array.isArray(rawSizes) ? rawSizes : (rawSizes.data || rawSizes.sizes || []);
 
       setGrnList(grnRes.data || []);
@@ -92,7 +93,7 @@ const GRNRegister = () => {
       setSearchableItems(combined);
       setWarehouses(whRes.data || []);
       setColors(colRes.data || []);
-      setSizes(parsedSizes); 
+      setSizes(parsedSizes);
       setTransactionTypes(parsedTxTypes);
       setApprovedPOs(parsedPOs);
       setIssuingList(parsedIssuing);
@@ -106,11 +107,70 @@ const GRNRegister = () => {
 
   useEffect(() => { loadGRNData(); }, []);
 
-  // 🌟 ✅ Filtering Logic (GRN No, Status, Date Range)
+  // ---------- Variant helpers ----------
+  // A material with no colours (or sizes) is colourless (or sizeless).
+  // For those, the colour / size is not asked for and is saved as null.
+  const getMaterialById = (materialId) =>
+    searchableItems.find(m => String(m._id) === String(materialId));
+
+  const materialHasColors = (materialId) => {
+    const mat = getMaterialById(materialId);
+    return !!mat && Array.isArray(mat.colors) && mat.colors.length > 0;
+  };
+
+  const materialHasSizes = (materialId) => {
+    const mat = getMaterialById(materialId);
+    return !!mat && Array.isArray(mat.sizes) && mat.sizes.length > 0;
+  };
+
+  const getFilteredColorsForMaterial = (materialId) => {
+    if (!materialId || !materialHasColors(materialId)) return [];
+    const mat = getMaterialById(materialId);
+    const allowed = mat.colors.map(c => String(c && typeof c === 'object' ? (c._id || c.id) : c));
+    return colors.filter(c => allowed.includes(String(c._id)));
+  };
+
+  const getFilteredSizesForMaterial = (materialId) => {
+    if (!materialId || !materialHasSizes(materialId)) return [];
+    const mat = getMaterialById(materialId);
+    const allowed = mat.sizes.map(s => String(s && typeof s === 'object' ? (s._id || s.id) : s));
+    return sizes.filter(s => allowed.includes(String(s._id)));
+  };
+
+  // Returns an error message if a row needs a colour / size and has none
+  const findVariantError = (rows) => {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const matId = row.material?._id || row.material;
+      if (materialHasColors(matId) && !(row.color?._id || row.color)) {
+        return `Row ${i + 1}: please select a colour.`;
+      }
+      if (materialHasSizes(matId) && !(row.size?._id || row.size)) {
+        return `Row ${i + 1}: please select a size.`;
+      }
+    }
+    return null;
+  };
+
+  // Builds the payload rows. Colour / size are null when the material does not use them.
+  const buildFormattedItems = (rows) => rows.map(item => {
+    const matId = item.material?._id || item.material;
+    return {
+      material: matId,
+      color: materialHasColors(matId) ? (item.color?._id || item.color || null) : null,
+      size: materialHasSizes(matId) ? (item.size?._id || item.size || null) : null,
+      uom: item.uom || 'Pcs',
+      receivedQty: Number(item.receivedQty || 0),
+      unitPrice: Number(item.unitPrice || 0),
+      totalPrice: Number(item.totalPrice || 0),
+      storeLocation: item.storeLocation || form.globalWarehouse
+    };
+  });
+
   const filteredGrns = grnList.filter(g => {
     const matchesGrn = (g.grnNo || '').toLowerCase().includes(searchGrn.toLowerCase());
     const matchesStatus = statusFilter === '' || g.status === statusFilter;
-    
+
     let matchesDate = true;
     if (startDate && g.grnDate < startDate) matchesDate = false;
     if (endDate && g.grnDate > endDate) matchesDate = false;
@@ -118,7 +178,6 @@ const GRNRegister = () => {
     return matchesGrn && matchesStatus && matchesDate;
   });
 
-  // 🌟 ✅ Pagination Logic (20 items per page)
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentGrns = filteredGrns.slice(indexOfFirstItem, indexOfLastItem);
@@ -152,7 +211,7 @@ const GRNRegister = () => {
         return {
           ...item, material: matId ? String(matId) : '',
           color: item.color?._id || item.color || '',
-          size: item.size?._id || item.size || '', 
+          size: item.size?._id || item.size || '',
           storeLocation: item.storeLocation?._id || item.storeLocation || warehouseId,
           searchQuery: `[${matCode}] ${matName}`
         };
@@ -189,9 +248,12 @@ const GRNRegister = () => {
           const matCode = matchedObj?.itemCode || (typeof matObj === 'object' ? (matObj.itemCode || matObj.materialCode) : null) || poItem.itemCode || 'MAT';
           const qty = Number(poItem.orderedQty || 0);
           const price = Number(poItem.unitPrice || 0);
+          const hasColors = materialHasColors(matId);
+          const hasSizes = materialHasSizes(matId);
           return {
-            material: matId ? String(matId) : '', color: poItem.color?._id || poItem.color || '',
-            size: poItem.size?._id || poItem.size || '', 
+            material: matId ? String(matId) : '',
+            color: hasColors ? (poItem.color?._id || poItem.color || '') : '',
+            size: hasSizes ? (poItem.size?._id || poItem.size || '') : '',
             uom: poItem.uom || matchedObj?.uom || 'Pcs', receivedQty: qty, unitPrice: price,
             totalPrice: qty * price, storeLocation: form.globalWarehouse, searchQuery: `[${matCode}] ${matName}`
           };
@@ -200,7 +262,7 @@ const GRNRegister = () => {
         initialItems = [{ material: '', color: '', size: '', uom: 'Pcs', receivedQty: 0, unitPrice: 0, totalPrice: 0, storeLocation: form.globalWarehouse, searchQuery: '' }];
       }
 
-      const res = await axios.post('http://192.168.1.30:5003/api/grn/save', {
+      const res = await axios.post(`${API_URL}/grn/save`, {
         grnDate: form.grnDate, grnType: form.grnType, workflow: form.workflow,
         purchaseOrder: form.purchaseOrder || null, materialIssuing: form.materialIssuing || null,
         supplier: form.supplier || null, invoiceNo: form.invoiceNo, vehicleNo: form.vehicleNo,
@@ -228,7 +290,7 @@ const GRNRegister = () => {
     const updatedItems = [...items];
     updatedItems[index].material = selectedItem._id;
     updatedItems[index].color = '';
-    updatedItems[index].size = ''; 
+    updatedItems[index].size = '';
     updatedItems[index].uom = selectedItem.uom?.abbreviation || selectedItem.uom?.uomCode || selectedItem.uom || 'Pcs';
     updatedItems[index].unitPrice = selectedItem.unitPrice || 0;
     updatedItems[index].searchQuery = `[${selectedItem.itemCode}] ${selectedItem.itemName}`;
@@ -247,30 +309,6 @@ const GRNRegister = () => {
     setItems(updatedItems);
   };
 
-  const getFilteredColorsForMaterial = (materialId) => {
-    if (!materialId) return [];
-    const selectedMat = searchableItems.find(m => String(m._id) === String(materialId));
-    if (selectedMat && selectedMat.colors && selectedMat.colors.length > 0) {
-      return colors.filter(c => selectedMat.colors.some(matColor => {
-        const matColorId = matColor && typeof matColor === 'object' ? (matColor._id || matColor.id) : matColor;
-        return String(matColorId) === String(c._id);
-      }));
-    }
-    return colors;
-  };
-
-  const getFilteredSizesForMaterial = (materialId) => {
-    if (!materialId) return [];
-    const selectedMat = searchableItems.find(m => String(m._id) === String(materialId));
-    if (selectedMat && selectedMat.sizes && selectedMat.sizes.length > 0) {
-      return sizes.filter(s => selectedMat.sizes.some(matSize => {
-        const matSizeId = matSize && typeof matSize === 'object' ? (matSize._id || matSize.id) : matSize;
-        return String(matSizeId) === String(s._id);
-      }));
-    }
-    return sizes; 
-  };
-
   const handleRemoveRow = (index) => {
     if (items.length > 1) setItems(items.filter((_, i) => i !== index));
   };
@@ -283,19 +321,10 @@ const GRNRegister = () => {
       alert("Please add at least one valid Item.");
       return;
     }
-    const formattedItems = validItems.map(item => ({
-      material: item.material?._id || item.material,
-      color: item.color?._id || item.color || null,
-      size: item.size?._id || item.size || null, 
-      uom: item.uom || 'Pcs',
-      receivedQty: Number(item.receivedQty || 0),
-      unitPrice: Number(item.unitPrice || 0),
-      totalPrice: Number(item.totalPrice || 0),
-      storeLocation: item.storeLocation || form.globalWarehouse
-    }));
+    const formattedItems = buildFormattedItems(validItems);
     try {
       setSubmitting(true);
-      await axios.post('http://192.168.1.30:5003/api/grn/save', {
+      await axios.post(`${API_URL}/grn/save`, {
         grnId, grnDate: form.grnDate, grnType: form.grnType, workflow: form.workflow,
         purchaseOrder: form.purchaseOrder || null, materialIssuing: form.materialIssuing || null,
         supplier: form.supplier || null, invoiceNo: form.invoiceNo, vehicleNo: form.vehicleNo,
@@ -325,28 +354,23 @@ const GRNRegister = () => {
       return;
     }
 
-    if (!window.confirm("Submit this GRN for approval?")) return;
+    const validItems = items.filter(i => {
+      const matId = i.material?._id || i.material;
+      return matId && String(matId).trim() !== '';
+    });
+
+    const variantError = findVariantError(validItems);
+    if (variantError) {
+      alert(variantError);
+      return;
+    }
+
+    if (!await confirmDialog("Submit this GRN for approval?")) return;
 
     try {
       setSubmitting(true);
 
-      const validItems = items.filter(i => {
-        const matId = i.material?._id || i.material;
-        return matId && String(matId).trim() !== '';
-      });
-
-      const formattedItems = validItems.map(item => ({
-        material: item.material?._id || item.material,
-        color: item.color?._id || item.color || null,
-        size: item.size?._id || item.size || null, 
-        uom: item.uom || 'Pcs',
-        receivedQty: Number(item.receivedQty || 0),
-        unitPrice: Number(item.unitPrice || 0),
-        totalPrice: Number(item.totalPrice || 0),
-        storeLocation: item.storeLocation || form.globalWarehouse
-      }));
-
-      await axios.post('http://192.168.1.30:5003/api/grn/save', {
+      await axios.post(`${API_URL}/grn/save`, {
         grnId,
         grnDate: form.grnDate,
         grnType: form.grnType,
@@ -358,14 +382,14 @@ const GRNRegister = () => {
         vehicleNo: form.vehicleNo,
         remarks: form.remarks,
         globalWarehouse: form.globalWarehouse,
-        items: formattedItems,
+        items: buildFormattedItems(validItems),
         grandTotal: Number(grandTotal),
         status: 'Draft',
         createdBy: currentUsername
       });
 
       const approvalRes = await axios.post(
-        `http://192.168.1.30:5003/api/grn/submit-approval/${grnId}`,
+        `${API_URL}/grn/submit-approval/${grnId}`,
         { createdBy: currentUsername }
       );
 
@@ -419,12 +443,12 @@ const GRNRegister = () => {
         </div>
       )}
 
-      {/* 🌟 ✅ GRN Filter Toolbar (Search by GRN No, Status, Date Range) */}
+      {/* GRN Filter Toolbar (Search by GRN No, Status, Date Range) */}
       {isListView && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-white p-4 rounded-xl border border-slate-100 shadow-xs">
           <div className="relative">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400"><Search size={14} /></span>
-            <input 
+            <input
               type="text"
               value={searchGrn}
               onChange={(e) => { setSearchGrn(e.target.value); setCurrentPage(1); }}
@@ -434,7 +458,7 @@ const GRNRegister = () => {
           </div>
 
           <div>
-            <select 
+            <select
               value={statusFilter}
               onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none uppercase text-slate-700 h-9"
@@ -448,7 +472,7 @@ const GRNRegister = () => {
 
           <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 h-9">
             <Calendar size={14} className="text-slate-400 shrink-0" />
-            <input 
+            <input
               type="date"
               value={startDate}
               onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
@@ -458,7 +482,7 @@ const GRNRegister = () => {
 
           <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 h-9">
             <Calendar size={14} className="text-slate-400 shrink-0" />
-            <input 
+            <input
               type="date"
               value={endDate}
               onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
@@ -502,14 +526,14 @@ const GRNRegister = () => {
         </div>
       )}
 
-      {/* 🌟 ✅ Pagination Controls (20 items per page) */}
+      {/* Pagination Controls (20 items per page) */}
       {isListView && totalPages > 1 && (
         <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-100 shadow-xs">
           <div className="text-slate-400 text-xs">
             Showing <strong className="text-slate-700">{indexOfFirstItem + 1}</strong> to <strong className="text-slate-700">{Math.min(indexOfLastItem, filteredGrns.length)}</strong> of <strong className="text-slate-700">{filteredGrns.length}</strong> entries
           </div>
           <div className="flex items-center gap-1">
-            <button 
+            <button
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
               className="p-2 border border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 disabled:opacity-40 cursor-pointer text-slate-600"
@@ -519,7 +543,7 @@ const GRNRegister = () => {
             <span className="px-3 py-1 font-bold text-slate-700 text-xs">
               Page {currentPage} of {totalPages}
             </span>
-            <button 
+            <button
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
               className="p-2 border border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 disabled:opacity-40 cursor-pointer text-slate-600"
@@ -675,8 +699,8 @@ const GRNRegister = () => {
                   <tr>
                     <th className="py-3 px-4 w-5 text-center">#</th>
                     <th className="py-3 px-4 w-1/4">Material / Item (Searchable)</th>
-                    <th className="py-3 px-4 w-1/5">Color *</th>
-                    <th className="py-3 px-4 w-1/5">Size *</th> 
+                    <th className="py-3 px-4 w-1/5">Color</th>
+                    <th className="py-3 px-4 w-1/5">Size</th>
                     <th className="py-3 px-4 w-16 text-center">UOM</th>
                     <th className="py-3 px-4 w-24 text-right">Received Qty</th>
                     <th className="py-3 px-4 w-24 text-right">Unit Cost</th>
@@ -687,7 +711,9 @@ const GRNRegister = () => {
                 <tbody className="divide-y font-medium text-slate-700 border-slate-100">
                   {items.map((row, index) => {
                     const filteredColors = getFilteredColorsForMaterial(row.material);
-                    const filteredSizes = getFilteredSizesForMaterial(row.material); 
+                    const filteredSizes = getFilteredSizesForMaterial(row.material);
+                    const hasColors = materialHasColors(row.material);
+                    const hasSizes = materialHasSizes(row.material);
                     const currentSearch = row.searchQuery || '';
                     const matchedItems = searchableItems.filter(m =>
                       (m.itemName || '').toLowerCase().includes(currentSearch.toLowerCase()) ||
@@ -715,14 +741,14 @@ const GRNRegister = () => {
                           </div>
                         </td>
                         <td className="py-2.5 px-4">
-                          <select value={row.color?._id || row.color || ''} onChange={(e) => handleItemRowChange(index, 'color', e.target.value)} disabled={!row.material} className="w-full px-2 py-1.5 bg-slate-50 border rounded-lg text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50">
-                            <option value="">{row.material ? "Select Color" : "Choose Item First"}</option>
+                          <select value={row.color?._id || row.color || ''} onChange={(e) => handleItemRowChange(index, 'color', e.target.value)} disabled={!row.material || !hasColors} className="w-full px-2 py-1.5 bg-slate-50 border rounded-lg text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50">
+                            <option value="">{!row.material ? "Choose Item First" : hasColors ? "Select Color" : "No colour (N/A)"}</option>
                             {filteredColors.map(c => <option key={c._id} value={c._id}>{c.colorName || c.name} ({c.colorCode || c.code})</option>)}
                           </select>
                         </td>
                         <td className="py-2.5 px-4">
-                          <select value={row.size?._id || row.size || ''} onChange={(e) => handleItemRowChange(index, 'size', e.target.value)} disabled={!row.material} className="w-full px-2 py-1.5 bg-slate-50 border rounded-lg text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50">
-                            <option value="">{row.material ? "Select Size" : "Choose Item First"}</option>
+                          <select value={row.size?._id || row.size || ''} onChange={(e) => handleItemRowChange(index, 'size', e.target.value)} disabled={!row.material || !hasSizes} className="w-full px-2 py-1.5 bg-slate-50 border rounded-lg text-xs focus:outline-none font-semibold text-emerald-950 disabled:opacity-50">
+                            <option value="">{!row.material ? "Choose Item First" : hasSizes ? "Select Size" : "No size (N/A)"}</option>
                             {filteredSizes.map(s => <option key={s._id} value={s._id}>{s.sizeCode || s.sizeDescription || s.name}</option>)}
                           </select>
                         </td>
@@ -806,7 +832,7 @@ const GRNRegister = () => {
                   <th className="p-3 w-8 text-center">#</th>
                   <th className="p-3">Material</th>
                   <th className="p-3">Color</th>
-                  <th className="p-3">Size</th> 
+                  <th className="p-3">Size</th>
                   <th className="p-3 text-center">UOM</th>
                   <th className="p-3 text-right">Qty</th>
                   <th className="p-3 text-right">Unit Price</th>
@@ -816,14 +842,14 @@ const GRNRegister = () => {
               <tbody className="divide-y font-medium">
                 {items.map((row, i) => {
                   const linkedColor = colors.find(c => String(c._id) === String(row.color?._id || row.color));
-                  const linkedSize = sizes.find(s => String(s._id) === String(row.size?._id || row.size)); 
+                  const linkedSize = sizes.find(s => String(s._id) === String(row.size?._id || row.size));
                   const matObj = searchableItems.find(m => String(m._id) === String(row.material?._id || row.material));
                   return (
                     <tr key={i}>
                       <td className="p-3 text-center text-slate-400">{i + 1}</td>
                       <td className="p-3 font-semibold text-slate-900">{matObj?.itemName || 'Component'}</td>
-                      <td className="p-3 text-slate-600 font-semibold">{linkedColor ? (linkedColor.colorName || linkedColor.name) : 'Default'}</td>
-                      <td className="p-3 text-slate-600 font-semibold">{linkedSize ? (linkedSize.sizeCode || linkedSize.sizeDescription || linkedSize.name) : 'N/A'}</td> 
+                      <td className="p-3 text-slate-600 font-semibold">{linkedColor ? (linkedColor.colorName || linkedColor.name) : '—'}</td>
+                      <td className="p-3 text-slate-600 font-semibold">{linkedSize ? (linkedSize.sizeCode || linkedSize.sizeDescription || linkedSize.name) : '—'}</td>
                       <td className="p-3 text-center">{row.uom}</td>
                       <td className="p-3 text-right font-bold">{row.receivedQty}</td>
                       <td className="p-3 text-right">{row.unitPrice?.toFixed(2)}</td>

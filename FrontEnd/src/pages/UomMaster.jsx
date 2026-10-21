@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Scale, Plus, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { uomApi } from '../api/uomApi';
+import { API_URL } from "../api/config";
 
 const UomMaster = () => {
   const [uoms, setUoms] = useState([]);
@@ -10,7 +11,7 @@ const UomMaster = () => {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  // Database එකෙන් UOM ලැයිස්තුව Live Fetch කිරීම
+
   const fetchUoms = async () => {
     try {
       setLoading(true);
@@ -27,7 +28,7 @@ const UomMaster = () => {
     fetchUoms();
   }, []);
 
-  // අලුත් UOM එකක් සේව් කිරීම
+  
   const handleAddUom = async (e) => {
     e.preventDefault();
     if (!uomName.trim() || !uomAbbr.trim()) return;
