@@ -3,10 +3,11 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { FileBarChart, Search, Printer, Loader2, RotateCcw, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { API_URL } from '../../api/config';
 
-const API = '${API_URL}';
+const API = API_URL;
 
-// Populate කරලා object එකක් ආවත්, ID string එකක් ආවත් ID එක ගන්න
+
 const getId = (v) => (v && typeof v === 'object' ? String(v._id ?? v.id ?? '') : String(v ?? ''));
 const asArray = (res) => {
   const d = res?.data;
@@ -15,7 +16,7 @@ const asArray = (res) => {
 };
 const num = (v) => Number(v) || 0;
 const fmt = (v) => num(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-// grnDate එක "2026-09-15" හෝ ISO date එකක් වුණත් YYYY-MM-DD ගන්න
+
 const toDay = (d) => (d ? String(d).slice(0, 10) : '');
 
 const statusCls = (s) => {
@@ -32,7 +33,7 @@ const GrnReportView = () => {
   const productId = searchParams.get('product') || '';
   const dateFrom = searchParams.get('dateFrom') || '';
   const dateTo = searchParams.get('dateTo') || '';
-  const status = searchParams.get('status') ?? 'Completed'; // Default: stock එකට වැටුණු GRN විතරයි
+  const status = searchParams.get('status') ?? 'Completed'; 
 
   const [grns, setGrns] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
@@ -48,12 +49,16 @@ const GrnReportView = () => {
     setForm({ warehouse: warehouseId, grnNo, product: productId, dateFrom, dateTo, status });
   }, [warehouseId, grnNo, productId, dateFrom, dateTo, status]);
 
-  // GRN Register එකේ පාවිච්චි කරන endpoints ම
+
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
-        const safe = (url) => axios.get(url).catch(() => ({ data: [] }));
+        const safe = (url) =>
+          axios.get(url).catch((err) => {
+            console.error(`Failed to load ${url}:`, err?.response?.status, err?.message);
+            return { data: [] };
+          });
         const [grnRes, whRes, supRes, matRes, fgRes, colRes, sizeRes] = await Promise.all([
           safe(`${API}/grn`),
           safe(`${API}/warehouses`),
@@ -94,7 +99,7 @@ const GrnReportView = () => {
     load();
   }, []);
 
-  // ID -> object lookup maps (populate නොකළත් නම පෙන්නන්න)
+ 
   const maps = useMemo(() => {
     const byId = (arr) => new Map(arr.map((x) => [String(x._id), x]));
     return {
@@ -129,7 +134,7 @@ const GrnReportView = () => {
       const typeName = g.grnType?.typeName || g.grnType?.name || 'General';
 
       (g.items || []).forEach((l, i) => {
-        // Warehouse එක GRN එකේ items වල storeLocation එකේ තියෙන්නේ
+        
         const whId = getId(l.storeLocation) || getId(g.globalWarehouse);
         if (warehouseId && whId !== warehouseId) return;
 
@@ -192,7 +197,7 @@ const GrnReportView = () => {
 
   const handleReset = () => setSearchParams(new URLSearchParams());
 
-  // ✅ Excel Export — දැනට filter කරලා පේන rows ටික .xlsx එකට
+ 
   const handleExportExcel = () => {
     if (rows.length === 0) {
       alert('No records to export.');
@@ -236,7 +241,7 @@ const GrnReportView = () => {
       { wch: 13 }, { wch: 12 }, { wch: 14 }, { wch: 16 },
     ];
 
-    // Qty / Unit Cost / Amount columns වලට number format
+  
     const headerRow = filterLines.length;
     const lastRow = headerRow + body.length + 2;
     for (let r = headerRow + 1; r <= lastRow; r++) {
