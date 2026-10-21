@@ -19,7 +19,7 @@ const SizeMaster = () => {
   const fetchSizes = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('${API_URL}/sizes');
+      const res = await axios.get(`${API_URL}/sizes`);
       setSizes(res.data || []);
       setLoading(false);
     } catch (err) {
@@ -55,7 +55,7 @@ const SizeMaster = () => {
 
     try {
       setSubmitting(true);
-      await axios.post('${API_URL}/sizes/save', {
+      await axios.post(`${API_URL}/sizes/save`, {
         sizeId,
         sizeCode: sizeCode.trim(),
         sizeDescription: sizeDescription.trim(),

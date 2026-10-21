@@ -29,9 +29,9 @@ const AddMaterialModal = ({ isOpen, onClose, onMaterialAdded, editingMaterial })
       try {
         setLoadingSizes(true);
         const [uomRes, colorRes, sizeRes] = await Promise.all([
-          axios.get('${API_URL}/uoms').catch(() => ({ data: [] })),
-          axios.get('${API_URL}/colors').catch(() => ({ data: [] })),
-          axios.get('${API_URL}/sizes').catch(() => ({ data: [] }))
+          axios.get(`${API_URL}/uoms`).catch(() => ({ data: [] })),
+          axios.get(`${API_URL}/colors`).catch(() => ({ data: [] })),
+          axios.get(`${API_URL}/sizes`).catch(() => ({ data: [] }))
         ]);
         setUoms(uomRes.data || []);
         setColors(colorRes.data || []);
@@ -107,7 +107,7 @@ const AddMaterialModal = ({ isOpen, onClose, onMaterialAdded, editingMaterial })
       if (editId) {
         await axios.put(`${API_URL}/materials/${editId}`, payload);
       } else {
-        await axios.post('${API_URL}/materials', payload);
+        await axios.post(`${API_URL}/materials`, payload);
       }
 
       setItemCode('');
@@ -259,7 +259,7 @@ const MaterialRegistry = () => {
 
   const fetchMaterials = async () => {
     try {
-      const response = await axios.get('${API_URL}/materials');
+      const response = await axios.get(`${API_URL}/materials`);
       setMaterials(response.data || []);
       setLoading(false);
     } catch (err) {
