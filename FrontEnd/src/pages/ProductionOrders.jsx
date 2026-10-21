@@ -88,6 +88,7 @@ const ProductionOrders = () => {
   const [workflows, setWorkflows] = useState([]);
   const [sizes, setSizes] = useState([]);
   const [colors, setColors] = useState([]);
+  const [materialVariants, setMaterialVariants] = useState({});
 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -115,13 +116,14 @@ const ProductionOrders = () => {
   // Loads every list this page needs from the server
   const fetchData = async () => {
     try {
-      const [poRes, soRes, costingRes, wfRes, sizeRes, colorRes] = await Promise.all([
+      const [poRes, soRes, costingRes, wfRes, sizeRes, colorRes, matRes] = await Promise.all([
         axios.get(`${API_URL}/production-orders`),
         axios.get(`${API_URL}/sales-orders`),
         axios.get(`${API_URL}/costing`),
         axios.get(`${API_URL}/workflows`),
         axios.get(`${API_URL}/sizes`).catch(() => ({ data: [] })),
-        axios.get(`${API_URL}/colors`).catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/colors`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/materials`).catch(() => ({ data: [] }))
       ]);
       setOrders(toArray(poRes.data));
       setSalesOrders(toArray(soRes.data));
@@ -134,6 +136,16 @@ const ProductionOrders = () => {
 
       const rawColors = colorRes.data;
       setColors(Array.isArray(rawColors) ? rawColors : toArray(rawColors?.data || rawColors?.colors));
+
+      // Colourless / sizeless flags per material (empty colors[] or sizes[])
+      const variantMap = {};
+      toArray(matRes.data).forEach(m => {
+        variantMap[String(m._id)] = {
+          hasColors: toArray(m.colors).length > 0,
+          hasSizes: toArray(m.sizes).length > 0
+        };
+      });
+      setMaterialVariants(variantMap);
       setLoading(false);
     } catch (err) {
       console.error('Error loading production registry:', err);
@@ -165,6 +177,14 @@ const ProductionOrders = () => {
     const found = colors.find(c => String(c._id) === String(color));
     if (!found) return 'Standard Shade';
     return found.colorName || found.name || found.code || 'Standard Shade';
+  };
+
+  // True when the material has colours. Empty colors[] means colourless.
+  const materialHasColors = (materialId, materialObj) => {
+    const flags = materialVariants[String(materialId)];
+    if (flags) return flags.hasColors;
+    if (materialObj && Array.isArray(materialObj.colors)) return materialObj.colors.length > 0;
+    return true;
   };
 
   // Builds the garment size/quantity list from the selected sales order
@@ -296,23 +316,34 @@ const ProductionOrders = () => {
       const stockList = toArray(stockRes.data);
 
       const calculatedShortageBOM = [];
+      const totalGarmentQty = colorGroups.reduce((sum, g) => sum + g.qty, 0);
 
-      colorGroups.forEach(group => {
-        const colorName = getColorLabel(group.colorId);
+      costingItems.forEach(cItem => {
+        const materialObj = cItem.material && typeof cItem.material === 'object' ? cItem.material : null;
+        const materialId = materialObj ? materialObj._id : cItem.material;
+        const hasColors = materialHasColors(materialId, materialObj);
 
-        costingItems.forEach(cItem => {
-          const materialObj = cItem.material && typeof cItem.material === 'object' ? cItem.material : null;
-          const materialId = materialObj ? materialObj._id : cItem.material;
+        const consumption = Number(cItem.consumption !== undefined ? cItem.consumption : cItem.yield || 0);
+        const wastage = Number(cItem.wastagePercentage !== undefined ? cItem.wastagePercentage : 0);
 
-          const consumption = Number(cItem.consumption !== undefined ? cItem.consumption : cItem.yield || 0);
-          const wastage = Number(cItem.wastagePercentage !== undefined ? cItem.wastagePercentage : 0);
+        // Coloured material: one row per colour.
+        // Colourless material (e.g. Glue): one common row for all garments.
+        const targets = hasColors
+          ? colorGroups
+          : [{ colorId: null, qty: totalGarmentQty }];
+
+        targets.forEach(group => {
           const totalRequired = group.qty * consumption * (1 + (wastage / 100));
 
-          // Stock must match both the material and the colour
+          // Stock must match the material, and the colour when the material has colours.
+          // Colourless stock is stored with colour = null.
           const currentStockObj = stockList.find(s => {
             const sMatId = s.material && typeof s.material === 'object' ? s.material._id : s.material;
             const sColId = s.color && typeof s.color === 'object' ? s.color._id : s.color;
-            return String(sMatId) === String(materialId) && String(sColId) === String(group.colorId);
+            const colourMatches = hasColors
+              ? String(sColId) === String(group.colorId)
+              : !sColId;
+            return String(sMatId) === String(materialId) && colourMatches;
           });
 
           const availableStock = currentStockObj ? Number(currentStockObj.qty || currentStockObj.quantity || 0) : 0;
@@ -320,8 +351,8 @@ const ProductionOrders = () => {
 
           calculatedShortageBOM.push({
             material: materialId,
-            color: group.colorId,
-            colorName,
+            color: hasColors ? group.colorId : null,
+            colorName: hasColors ? getColorLabel(group.colorId) : 'Common (no colour)',
             colorQty: group.qty,
             materialName: materialObj?.materialName || cItem.materialName || 'Component Material',
             itemCode: materialObj?.itemCode || cItem.itemCode || 'MAT',

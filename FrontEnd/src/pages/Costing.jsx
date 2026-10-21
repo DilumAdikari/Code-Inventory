@@ -869,7 +869,7 @@ const Costing = () => {
               <div className="w-80 text-xs space-y-2 font-medium">
                 <div className="flex justify-between"><span>Material Net Cost:</span><span>LKR {totalMaterialCost.toLocaleString()}</span></div>
                 <div className="flex justify-between"><span>Styling CM charges:</span><span>LKR {Number(cmCost).toLocaleString()}</span></div>
-                <div className="flex justify-between"><span>Factory Overhead:</span><span>LKR {Number(overheadCost).toLocaleString()}</span></div>
+                <div className="flex justify-between"><span>Cutting Charges:</span><span>LKR {Number(overheadCost).toLocaleString()}</span></div>
                 <div className="flex justify-between border-b pb-2"><span>Fabric Charges:</span><span>LKR {Number(fabricCharges).toLocaleString()}</span></div>
                 <div className="flex justify-between text-sm font-bold text-slate-900 pt-1">
                   <span>GRAND TOTAL VALUE:</span>

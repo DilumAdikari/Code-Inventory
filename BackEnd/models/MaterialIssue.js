@@ -13,7 +13,7 @@ const MaterialIssueSchema = new mongoose.Schema({
     default: null
   },
 
-  // ✅ workflow for approval routing
+  // workflow for approval routing
   workflow: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Workflow',
@@ -30,7 +30,7 @@ const MaterialIssueSchema = new mongoose.Schema({
 
   items: [{
     material: { type: mongoose.Schema.Types.ObjectId, ref: 'Material', required: true },
-    color: { type: mongoose.Schema.Types.ObjectId, ref: 'Color', required: true },
+    color: { type: mongoose.Schema.Types.ObjectId, ref: 'Color', default:null },
     uom: { type: String, default: 'Pcs' },
     allocatedQty: { type: Number, required: true },
     issuedQty: { type: Number, required: true },

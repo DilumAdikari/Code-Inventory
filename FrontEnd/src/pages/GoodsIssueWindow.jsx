@@ -45,19 +45,27 @@ const GoodsIssueWindow = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [issueRes, whRes, stockRes, costingRes, poRes, colorRes] = await Promise.all([
+        const [issueRes, whRes, stockRes, costingRes, poRes, colorRes, matRes] = await Promise.all([
           axios.get(`${API_URL}/material-issues`),
           axios.get(`${API_URL}/warehouses`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/stocks`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/costing`).catch(() => ({ data: [] })),
           axios.get(`${API_URL}/production-orders`).catch(() => ({ data: [] })),
-          axios.get(`${API_URL}/colors`).catch(() => ({ data: [] }))
+          axios.get(`${API_URL}/colors`).catch(() => ({ data: [] })),
+          axios.get(`${API_URL}/materials`).catch(() => ({ data: [] }))
         ]);
 
         const issues = toArray(issueRes.data);
         const costings = toArray(costingRes.data);
         const productionOrders = toArray(poRes.data);
         const colorList = toArray(colorRes.data);
+
+        // Colourless material = empty colors[] on the material master
+        const colourlessIds = new Set(
+          toArray(matRes.data)
+            .filter(m => toArray(m.colors).length === 0)
+            .map(m => String(m._id))
+        );
 
         const currentIssue = issues.find(i => String(i._id) === String(id));
         setIssueData(currentIssue || null);
@@ -99,17 +107,22 @@ const GoodsIssueWindow = () => {
         }
 
         if (currentIssue?.items) {
-          setEditableItems(currentIssue.items.map(item => ({
-            materialId: item.material?._id || item.material,
-            colorId: item.color?._id || item.color,
+          setEditableItems(currentIssue.items.map(item => {
+            const materialId = item.material?._id || item.material;
+            const isColourless = colourlessIds.has(String(materialId));
+            return {
+            materialId,
+            // Colourless materials have no colour (stock is stored with colour = null)
+            colorId: isColourless ? null : (item.color?._id || item.color || null),
             materialName: item.material?.materialName || 'Material',
             itemCode: item.material?.itemCode || 'MAT',
-            colorName: getColorName(item.color, colorList),
+            colorName: isColourless ? 'N/A' : getColorName(item.color, colorList),
             uom: item.uom || 'Pcs',
             allocatedQty: Number(item.allocatedQty || 0),
             issueQty: Number(item.issuedQty || item.allocatedQty || 0),
             value: item.value || 0
-          })));
+            };
+          }));
         }
 
         setWarehouses(toArray(whRes.data));
@@ -131,8 +144,10 @@ const GoodsIssueWindow = () => {
       const sMatId = s.material?._id || s.material;
       const sColId = s.color?._id || s.color;
       const sWhId = s.warehouse?._id || s.warehouse;
+      // Colourless rows (colorId null) match only stock stored with no colour
+      const colourMatches = colorId ? String(sColId) === String(colorId) : !sColId;
       return String(sMatId) === String(materialId) &&
-             String(sColId) === String(colorId || '') &&
+             colourMatches &&
              String(sWhId) === String(selectedWarehouse);
     });
     return stockEntry ? Number(stockEntry.qty || 0) : 0;
