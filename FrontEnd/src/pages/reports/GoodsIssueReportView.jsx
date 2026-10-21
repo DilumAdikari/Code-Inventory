@@ -3,8 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { PackageMinus, Search, Printer, Loader2, RotateCcw, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { API_URL } from '../../api/config';
 
-const API = '${API_URL}';
+const API = API_URL;
 
 // Populate කරලා object එකක් ආවත්, ID string එකක් ආවත් ID එක ගන්න
 const getId = (v) => (v && typeof v === 'object' ? String(v._id ?? v.id ?? '') : String(v ?? ''));
