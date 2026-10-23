@@ -21,46 +21,45 @@ import SizeMaster from './pages/SizeMaster';
 import GoodsIssueWindow from './pages/GoodsIssueWindow'; 
 import MaterialRegistry from './pages/MaterialRegistry'; 
 
-// 🌟 අලුතින් එක් කළ Invoice Register පේජ් එක සම්බන්ධ කිරීම
+
 import InvoiceRegister from './pages/InvoiceRegister'; 
 
-// 🌟 Transaction Type Master පේජ් එක සම්බන්ධ කිරීම
+
 import TransactionTypeMaster from './pages/TransactionTypeMaster'; 
 
-// 🌟 Production Orders මොඩියුලය සම්බන්ධ කිරීම
+
 import ProductionOrders from './pages/ProductionOrders'; 
 
-// 🌟 Purchases / Procurement මොඩියුලය සම්බන්ධ කිරීම
+
 import Purchases from './pages/Purchases'; 
 
-// 🌟 Customers මොඩියුලය සම්බන්ධ කිරීම
+
 import Customers from './pages/Customers'; 
 
-// 🌟 Finished Goods මොඩියුලය සම්බන්ධ කිරීම
+
 import FinishedGoods from './pages/FinishedGoods';  
 
-// 🌟 GRN Report View (ෆෝම් එක සහ ටේබල් එක පෙන්වන එකම පේජ් එක) සම්බන්ධ කිරීම
+
 import GrnReportView from './pages/reports/GrnReportView'; 
 
-// 🌟 Goods Issue Report View සම්බන්ධ කිරීම (අලුතින් එක් කළා)
+
 import GoodsIssueReportView from './pages/reports/GoodsIssueReportView';
 
-// 🌟 GRN Return පේජ් එක සම්බන්ධ කිරීම (අලුතින් එක් කළා)
+
 import GrnReturn from './pages/GrnReturn'; 
 
 function App() {
   const location = useLocation();
 
-  // LOCAL STORAGE එකෙන් TOKEN එක කියවා USER LOG වෙලාද නැද්ද යන්න පරික්ෂා කිරීම
+  
   const isAuthenticated = !!localStorage.getItem('token');
 
-  // shadow-wide uppercase string processing
+
   const currentUsername = localStorage.getItem('username') || 'Guest';
 
-  // යූසර්ගේ නමේ පළමු අකුර Avatar Icon එක සඳහා ලබා ගැනීම
   const firstLetter = currentUsername.charAt(0).toUpperCase();
 
-  // යූසර් බලෙන් URL එක ගහලා පිටුවකට යන්න හැදුවොත් පර්මිෂන් චෙක් කරන ශ්‍රිතය (Admin ට සේරම විවෘතයි)
+ 
   const hasRouteAccess = (moduleName) => {
     const userRole = localStorage.getItem('userRole');
     if (userRole === 'Admin') return true; 
@@ -68,17 +67,17 @@ function App() {
     return !!permissions[moduleName];
   };
 
-  // දැනට ඉන්න පිටුවේ නම නිවැරදිව Header එකේ පෙන්වීමට
+
   const getPageTitle = () => {
     const path = location.pathname;
     if (path.startsWith('/dashboard')) return 'Dashboard';
     if (path.startsWith('/customers')) return 'Customers'; 
     if (path.startsWith('/finished-goods')) return 'Finished Goods'; 
     if (path.startsWith('/purchases')) return 'Purchasing'; 
-    if (path.startsWith('/invoices')) return 'Sales Invoices'; // 🌟 Invoice Title එක එක් කළා
-    if (path.startsWith('/reports/grn')) return 'GRN Report'; // 🌟 GRN Report Title එක එක් කළා
-    if (path.startsWith('/reports/goods-issue')) return 'Goods Issue Report'; // 🌟 Goods Issue Report Title එක එක් කළා
-    if (path.startsWith('/grn-return')) return 'GRN Return'; // 🌟 GRN Return Title එක එක් කළා
+    if (path.startsWith('/invoices')) return 'Sales Invoices'; 
+    if (path.startsWith('/reports/grn')) return 'GRN Report'; 
+    if (path.startsWith('/reports/goods-issue')) return 'Goods Issue Report'; 
+    if (path.startsWith('/grn-return')) return 'GRN Return'; 
     if (path.startsWith('/notifications')) return 'Notifications'; 
     if (path.startsWith('/sales-orders/print')) return 'Sales Order Print View'; 
     if (path.startsWith('/sales-orders')) return 'Sales Orders';
@@ -101,12 +100,12 @@ function App() {
     return 'Dashboard';
   };
 
-  // 1. USER LOG වෙලා නැත්නම් සහ ඉන්නේ /login පිටුවේ නෙමෙයි නම්, ඔටෝ ලොගින් පිටුවට හරවා යැවීම (Guard)
+
   if (!isAuthenticated && location.pathname !== '/login') {
     return <Navigate to="/login" replace />;
   }
 
-  // 2. USER ලොග් වෙලා ඉන්නවනම් ආපහු /login එකට යාම වැළැක්වීම
+
   if (isAuthenticated && location.pathname === '/login') {
     return <Navigate to="/dashboard" replace />;
   }
@@ -114,13 +113,13 @@ function App() {
   return (
     <div className="flex h-screen w-screen bg-slate-50 overflow-hidden text-sm font-normal text-slate-700">
       
-      {/* USER ඉන්නේ /login පිටුවේ නම් Sidebar සහ Header පෙන්වන්නේ නැත (Clean Login UI) */}
+  
       {location.pathname !== '/login' && <Sidebar />} 
 
-      {/* දකුණු පැත්තේ ප්‍රධාන Layout Area එක */}
+
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
         
-        {/* TOP HEADER BAR - Login පිටුවේදී සඟවනු ලැබේ */}
+
         {location.pathname !== '/login' && (
           <header className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-8 shrink-0 w-full">
             <h1 className="text-lg font-semibold text-slate-800">{getPageTitle()} Overview</h1>
@@ -147,35 +146,36 @@ function App() {
               />
               <Route path="/dashboard" element={<Dashboard />} />
 
-              {/* Customers Route එක */}
+       
               <Route path="/customers" element={hasRouteAccess('partners') ? <Customers /> : <Navigate to="/dashboard" replace />} />
 
-              {/* Finished Goods Route එක */}
+          
               <Route path="/finished-goods" element={hasRouteAccess('materialRegistry') ? <FinishedGoods /> : <Navigate to="/dashboard" replace />} />
 
-              {/* Purchases Route එක */}
-              <Route path="/purchases" element={hasRouteAccess('materialIssuing') ? <Purchases /> : <Navigate to="/dashboard" replace />} />
 
-              {/* 🌟 Sales Invoices Route එක (Material Issuing / Sales පර්මිෂන් එක යටතේ) */}
+              <Route path="/purchases" element={hasRouteAccess('materialIssuing') ? <Purchases /> : <Navigate to="/dashboard" replace />} />
+              <Route path="/purchases/:id" element={hasRouteAccess('materialIssuing') ? <Purchases /> : <Navigate to="/dashboard" replace />} />
+
+       
               <Route path="/invoices" element={hasRouteAccess('materialIssuing') ? <InvoiceRegister /> : <Navigate to="/dashboard" replace />} />
 
-              {/* 🌟 GRN Report Routes (GrnReportView එකම පාවිච්චි කරයි) */}
+           
               <Route path="/reports/grn" element={hasRouteAccess('grnHistory') ? <GrnReportView /> : <Navigate to="/dashboard" replace />} />
               <Route path="/reports/grn/view" element={hasRouteAccess('grnHistory') ? <GrnReportView /> : <Navigate to="/dashboard" replace />} />
 
-              {/* 🌟 Goods Issue Report Route (අලුතින් එක් කළා) */}
+          
               <Route path="/reports/goods-issue" element={hasRouteAccess('materialIssuing') ? <GoodsIssueReportView /> : <Navigate to="/dashboard" replace />} />
 
-              {/* 🌟 GRN Return Route එක (අලුතින් එක් කළා) */}
+        
               <Route path="/grn-return" element={hasRouteAccess('grnHistory') ? <GrnReturn /> : <Navigate to="/dashboard" replace />} />
 
-              {/* Notifications එක හැමෝටම විවෘත පොදු පිටුවක් (Inbox) */}
+       
               <Route path="/notifications" element={<Notifications />} />
               
-              {/* Live Stock Overview පේජ් රූට් එක */}
+
               <Route path="/stock-overview" element={<StockOverview />} />
               
-              {/* Warehouse Setup එක */}
+          
               <Route path="/warehouse-registry" element={hasRouteAccess('settings') ? <WarehouseRegistry /> : <Navigate to="/dashboard" replace />} />
 
               {/* Sales Orders & Costing Routes */}
@@ -206,7 +206,7 @@ function App() {
               <Route path="/uom-master" element={hasRouteAccess('settings') ? <UomMaster /> : <Navigate to="/dashboard" replace />} />  
               <Route path="/size-master" element={hasRouteAccess('settings') ? <SizeMaster /> : <Navigate to="/dashboard" replace />} />  
               
-              {/* වැරදි Route එකක් ගැහුවොත් ඔටෝ ඩෑෂ්බෝඩ් එකට යවයි */}
+         
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </div>
