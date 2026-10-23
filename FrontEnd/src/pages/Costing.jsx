@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Loader2, ArrowLeft, FileSpreadsheet, X, Printer, Send, ChevronDown, Search } from 'lucide-react';
+import { Plus, Loader2, ArrowLeft, FileSpreadsheet, X, Printer, Send, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from '../api/config';
 
@@ -106,6 +106,8 @@ const SearchableSelect = ({
 
 const Costing = () => {
   const [costingList, setCostingList] = useState([]);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 15;
   const [salesOrders, setSalesOrders] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -172,6 +174,11 @@ const Costing = () => {
   };
 
   useEffect(() => { loadInitialData(); }, []);
+
+  // Client-side paging for the costing list
+  const totalPages = Math.max(1, Math.ceil(costingList.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedCosting = costingList.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   // Opens an existing costing: Completed ones open in print view, others open in the editable grid
   const handleRowClick = (costing) => {
@@ -471,8 +478,8 @@ const Costing = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {costingList.length > 0 ? (
-                costingList.map((c) => {
+              {pagedCosting.length > 0 ? (
+                pagedCosting.map((c) => {
                   const orderReferenceText = c.salesOrder && typeof c.salesOrder === 'object'
                     ? (c.salesOrder.orderRef || 'Linked Order')
                     : String(c.salesOrder || 'Unlinked SO');
@@ -497,6 +504,28 @@ const Costing = () => {
               )}
             </tbody>
           </table>
+
+          {/* PAGINATION */}
+          <div className="p-4 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
+            <span>{costingList.length.toLocaleString()} costing records</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                disabled={safePage <= 1}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1"
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span className="px-2">Page {safePage} of {totalPages}</span>
+              <button
+                onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                disabled={safePage >= totalPages}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
