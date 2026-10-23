@@ -5,6 +5,8 @@ import {
   Loader2,
   Search,
   Plus,
+  ChevronLeft,
+  ChevronRight,
   X,
   ClipboardList,
   Layers,
@@ -39,6 +41,18 @@ const getSizeLabel = (size, sizeList) => {
   if (!found) return size;
   return found.sizeCode || found.sizeDescription || size;
 };
+
+// Rows per page on the production order list
+const PO_PAGE_SIZE = 15;
+
+// Status choices for the list filter
+const PO_STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  { value: 'Draft', label: 'Draft' },
+  { value: 'Pending Approval', label: 'Pending Approval' },
+  { value: 'Completed', label: 'Completed' },
+  { value: 'Cancelled', label: 'Cancelled' },
+];
 
 // Returns the badge classes for a production order status
 const getStatusStyle = (status) => {
@@ -114,6 +128,10 @@ const ProductionOrders = () => {
 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [page, setPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState(null);
@@ -497,10 +515,40 @@ const ProductionOrders = () => {
     fetchData();
   };
 
-  const filteredOrders = orders.filter(o =>
-    (o.productionOrderNo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (o.salesOrder?.orderRef || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Applies the search, status and target date filters to the production order list
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const hasActiveFilters = !!(normalizedSearch || statusFilter || dateFrom || dateTo);
+
+  const filteredOrders = orders.filter((o) => {
+    if (normalizedSearch) {
+      const poNo = String(o.productionOrderNo || '').toLowerCase();
+      const soRef = String(o.salesOrder?.orderRef || '').toLowerCase();
+      const costingNo = String(getCostingNo(o)).toLowerCase();
+      if (!poNo.includes(normalizedSearch) && !soRef.includes(normalizedSearch) && !costingNo.includes(normalizedSearch)) {
+        return false;
+      }
+    }
+    if (statusFilter && o.status !== statusFilter) return false;
+
+    const day = String(o.targetDate || '').slice(0, 10);
+    if (dateFrom && (!day || day < dateFrom)) return false;
+    if (dateTo && (!day || day > dateTo)) return false;
+    return true;
+  });
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('');
+    setDateFrom('');
+    setDateTo('');
+  };
+
+  // Going back to page 1 whenever a filter changes
+  useEffect(() => { setPage(1); }, [searchTerm, statusFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PO_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedOrders = filteredOrders.slice((safePage - 1) * PO_PAGE_SIZE, safePage * PO_PAGE_SIZE);
 
   if (loading) {
     return (
@@ -553,16 +601,60 @@ const ProductionOrders = () => {
             </button>
           </div>
 
-          <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-center w-full">
-            <div className="relative w-full md:w-80">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400"><Search size={18} /></span>
+          {/* FILTERS */}
+          <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            <div className="md:col-span-4 relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400"><Search size={16} /></span>
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by PO number or Sales Order..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all"
+                placeholder="Search PO no, sales order or costing no..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all"
               />
+            </div>
+
+            <div className="md:col-span-2">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all"
+              >
+                {PO_STATUS_OPTIONS.map((o) => (
+                  <option key={o.value || 'all'} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                title="Target date from"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                title="Target date to"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <button
+                type="button"
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                className="w-full px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed border-none"
+              >
+                Clear filters
+              </button>
             </div>
           </div>
 
@@ -580,7 +672,7 @@ const ProductionOrders = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {filteredOrders.length > 0 ? filteredOrders.map((order) => {
+                  {pagedOrders.length > 0 ? pagedOrders.map((order) => {
                     const displayPoNo = order.productionOrderNo || `PROD-${order._id.slice(-5).toUpperCase()}`;
                     return (
                       <tr
@@ -602,11 +694,37 @@ const ProductionOrders = () => {
                     );
                   }) : (
                     <tr>
-                      <td colSpan="6" className="py-16 text-center text-slate-400 italic">No production orders registered.</td>
+                      <td colSpan="6" className="py-16 text-center text-slate-400 italic">
+                        {orders.length > 0 ? 'No production orders match the selected filters.' : 'No production orders registered.'}
+                      </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* PAGINATION */}
+            <div className="p-4 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
+              <span>{filteredOrders.length.toLocaleString()} of {orders.length.toLocaleString()} production orders</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                  disabled={safePage <= 1}
+                  className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1 bg-white cursor-pointer"
+                >
+                  <ChevronLeft size={14} /> Prev
+                </button>
+                <span className="px-2">Page {safePage} of {totalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                  disabled={safePage >= totalPages}
+                  className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1 bg-white cursor-pointer"
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
             </div>
           </div>
         </>
