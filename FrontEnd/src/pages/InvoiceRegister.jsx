@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Loader2, FileText, X, Printer, ArrowLeft, Search, Send, CheckCircle, AlertCircle, Save } from 'lucide-react';
+import { Plus, Loader2, FileText, X, Printer, ArrowLeft, Search, Send, CheckCircle, AlertCircle, Save, ChevronLeft, ChevronRight } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from "../api/config";
 import { confirmDialog } from '../components/AppDialog';
@@ -47,6 +47,49 @@ const getAllocatedQty = (rows, rowIndex, materialId, colorId, sizeId) => {
   }, 0);
 };
 
+// Rows per page on the invoice list
+const INVOICE_PAGE_SIZE = 15;
+
+// Returns YYYY-MM-DD for a date string or Date value
+const dayOf = (v) => {
+  if (!v) return '';
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+  const d = new Date(v);
+  if (isNaN(d)) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+// Checks every line of an invoice against the on-hand stock in its warehouse.
+// Lines with the same material + colour + size + warehouse are added together first.
+const invoiceStockCheck = (inv, stocks) => {
+  const need = {};
+  toArray(inv.items).forEach((item) => {
+    const mat = getId(item.material);
+    if (!mat) return;
+    const warehouseId = getId(item.storeLocation) || getId(inv.globalWarehouse);
+    const col = getId(item.color);
+    const sz = getId(item.size);
+    const key = `${warehouseId}|${mat}|${col}|${sz}`;
+    if (!need[key]) {
+      need[key] = {
+        qty: 0,
+        name: item.resolvedName || item.material?.materialName || 'Item',
+        mat, col, sz, warehouseId,
+      };
+    }
+    need[key].qty += Number(item.issuedQty || 0);
+  });
+
+  const lines = [];
+  Object.values(need).forEach((n) => {
+    const onHand = getStockQty(n.mat, n.col, n.sz, n.warehouseId, stocks);
+    if (n.qty > onHand) {
+      lines.push(`${n.name}: need ${n.qty}, available ${onHand}`);
+    }
+  });
+  return { short: lines.length, lines };
+};
+
 const InvoiceRegister = () => {
   const [invoiceList, setInvoiceList] = useState([]);
   const [searchableItems, setSearchableItems] = useState([]);
@@ -78,6 +121,14 @@ const InvoiceRegister = () => {
   });
 
   const [items, setItems] = useState([]);
+
+  // List filters and paging
+  const [searchText, setSearchText] = useState('');
+  const [invStatus, setInvStatus] = useState('All');
+  const [stockFilter, setStockFilter] = useState('All');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [page, setPage] = useState(1);
   const currentUsername = localStorage.getItem('username') || 'ADMIN';
 
   // Loads every list this page needs from the server
@@ -477,6 +528,66 @@ const InvoiceRegister = () => {
     loadInvoiceData();
   };
 
+  // ---------- LIST FILTERS, STOCK CHECK & PAGING ----------
+
+  const invSearch = searchText.trim().toLowerCase();
+  const hasInvFilters = !!(invSearch || invStatus !== 'All' || stockFilter !== 'All' || dateFrom || dateTo);
+
+  const filteredInvoices = toArray(invoiceList).filter((inv) => {
+    if (invSearch) {
+      const no = String(inv.invoiceNo || '').toLowerCase();
+      const cust = String(inv.customerName || '').toLowerCase();
+      if (!no.includes(invSearch) && !cust.includes(invSearch)) return false;
+    }
+    if (invStatus !== 'All' && (inv.status || 'Draft') !== invStatus) return false;
+
+    if (stockFilter !== 'All') {
+      if (inv.status === 'Completed') return false;
+      const isShort = invoiceStockCheck(inv, stocks).short > 0;
+      if (stockFilter === 'Short' && !isShort) return false;
+      if (stockFilter === 'OK' && isShort) return false;
+    }
+
+    const day = dayOf(inv.invoiceDate);
+    if (dateFrom && (!day || day < dateFrom)) return false;
+    if (dateTo && (!day || day > dateTo)) return false;
+    return true;
+  });
+
+  const clearInvFilters = () => {
+    setSearchText('');
+    setInvStatus('All');
+    setStockFilter('All');
+    setDateFrom('');
+    setDateTo('');
+  };
+
+  // Going back to page 1 whenever a filter changes
+  useEffect(() => { setPage(1); }, [searchText, invStatus, stockFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / INVOICE_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedInvoices = filteredInvoices.slice((safePage - 1) * INVOICE_PAGE_SIZE, safePage * INVOICE_PAGE_SIZE);
+
+  // Stock column badge: OK / Short (hover shows the short lines) / Deducted for completed invoices
+  const renderStock = (inv) => {
+    if (inv.status === 'Completed') {
+      return <span className="text-xs text-slate-400 italic">Deducted</span>;
+    }
+    const check = invoiceStockCheck(inv, stocks);
+    if (check.short === 0) {
+      return <span className="px-2 py-0.5 border rounded text-xs uppercase bg-emerald-50 border-emerald-200 text-emerald-700">OK</span>;
+    }
+    return (
+      <span
+        title={check.lines.join('\n')}
+        className="px-2 py-0.5 border rounded text-xs uppercase bg-rose-50 border-rose-200 text-rose-700 cursor-help"
+      >
+        Short ({check.short})
+      </span>
+    );
+  };
+
   const getStatusColor = (status) => {
     if (status === 'Completed') return 'bg-emerald-50 border-emerald-200 text-emerald-700 font-bold';
     if (status === 'Pending Approval') return 'bg-amber-50 border-amber-200 text-amber-700 font-bold';
@@ -507,6 +618,76 @@ const InvoiceRegister = () => {
       )}
 
       {isListView && (
+        <>
+        <div className="bg-white p-4 rounded-xl border border-slate-100 grid grid-cols-1 md:grid-cols-12 gap-3 items-center print:hidden">
+          <div className="md:col-span-3 relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Search invoice no or customer..."
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <select
+              value={invStatus}
+              onChange={(e) => setInvStatus(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800 cursor-pointer"
+            >
+              <option value="All">All statuses</option>
+              <option value="Draft">Draft</option>
+              <option value="Pending Approval">Pending Approval</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </div>
+
+          {/* <div className="md:col-span-2"> */}
+            {/* <select */}
+              {/* value={stockFilter} */}
+              {/* onChange={(e) => setStockFilter(e.target.value)} */}
+              {/* className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800 cursor-pointer" */}
+            {/* > */}
+              {/* <option value="All">All stock</option> */}
+              {/* <option value="Short">Short stock only</option> */}
+              {/* <option value="OK">Stock OK only</option> */}
+            {/* </select> */}
+          {/* </div> */}
+
+          <div className="md:col-span-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              title="Invoice date from"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              title="Invoice date to"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800"
+            />
+          </div>
+
+          <div className="md:col-span-1">
+            <button
+              type="button"
+              onClick={clearInvFilters}
+              disabled={!hasInvFilters}
+              className="w-full px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer border-none"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl border border-slate-100 overflow-hidden print:hidden">
           <table className="w-full text-left border-collapse text-sm">
             <thead>
@@ -517,11 +698,12 @@ const InvoiceRegister = () => {
                 <th className="py-4 px-6">WORKFLOW</th>
                 <th className="py-4 px-6">TOTAL</th>
                 <th className="py-4 px-6">STATUS</th>
+                <th className="py-4 px-6">STOCK</th>
                 <th className="py-4 px-6">BY</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {invoiceList.length > 0 ? invoiceList.map((inv) => (
+              {pagedInvoices.length > 0 ? pagedInvoices.map((inv) => (
                 <tr key={inv._id} onClick={() => handleRowClick(inv)} className="hover:bg-slate-50 cursor-pointer transition-colors">
                   <td className="py-4 px-6 font-bold text-emerald-950">{inv.invoiceNo}</td>
                   <td className="py-4 px-6 text-slate-500">{inv.invoiceDate}</td>
@@ -533,16 +715,44 @@ const InvoiceRegister = () => {
                       {inv.status || 'Draft'}
                     </span>
                   </td>
+                  <td className="py-4 px-6">{renderStock(inv)}</td>
                   <td className="py-4 px-6 text-slate-400 uppercase text-xs">{inv.createdBy}</td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="7" className="py-16 text-center text-slate-400 italic">No invoices found.</td>
+                  <td colSpan="8" className="py-16 text-center text-slate-400 italic">
+                    {invoiceList.length > 0 ? 'No invoices match the selected filters.' : 'No invoices found.'}
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
+
+          {/* PAGINATION */}
+          <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-500">
+            <span>{filteredInvoices.length.toLocaleString()} of {invoiceList.length.toLocaleString()} invoices</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                disabled={safePage <= 1}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1 bg-white cursor-pointer"
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span className="px-2">Page {safePage} of {totalPages}</span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                disabled={safePage >= totalPages}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1 bg-white cursor-pointer"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         </div>
+        </>
       )}
 
       {isModalOpen && (
