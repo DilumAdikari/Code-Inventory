@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Search, Loader2, Package, X, Edit2 } from 'lucide-react';
+import { Plus, Search, Loader2, Package, X, Edit2, Trash2 } from 'lucide-react';
 import { API_URL } from "../api/config";
+import { confirmDialog } from '../components/AppDialog';
 
 
 const AddMaterialModal = ({ isOpen, onClose, onMaterialAdded, editingMaterial }) => {
@@ -256,6 +257,7 @@ const MaterialRegistry = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const fetchMaterials = async () => {
     try {
@@ -280,6 +282,22 @@ const MaterialRegistry = () => {
   const handleOpenEdit = (material) => {
     setEditingMaterial(material);
     setIsModalOpen(true);
+  };
+
+  // Deletes a material after confirmation. The server refuses if the material is already used in stock, GRN, POs etc.
+  const handleDelete = async (material) => {
+    const label = material.materialName || material.itemCode || 'this material';
+    if (!(await confirmDialog(`"${label}" delete karanna da? Mema action eka undo karanna ba.`))) return;
+    try {
+      setDeletingId(material._id);
+      await axios.delete(`${API_URL}/materials/${material._id}`);
+      setMaterials((prev) => prev.filter((m) => m._id !== material._id));
+    } catch (err) {
+      console.error('Delete material failed:', err);
+      alert(err.response?.data?.message || 'Failed to delete material.');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const filteredMaterials = materials.filter(m => 
@@ -389,6 +407,13 @@ const MaterialRegistry = () => {
                         className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors border-none cursor-pointer inline-flex items-center gap-1"
                       >
                         <Edit2 size={12} /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(material)}
+                        disabled={deletingId === material._id}
+                        className="ml-1.5 px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-medium transition-colors border-none cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                      >
+                        {deletingId === material._id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Delete
                       </button>
                     </td>
                   </tr>

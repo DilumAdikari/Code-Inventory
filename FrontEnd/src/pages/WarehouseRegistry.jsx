@@ -18,7 +18,7 @@ const WarehouseRegistry = () => {
   const loadWarehouses = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('${API_URL}/warehouses');
+      const res = await axios.get(`${API_URL}/warehouses`);
       setWarehouses(res.data || []);
       setLoading(false);
     } catch (err) {
@@ -33,7 +33,7 @@ const WarehouseRegistry = () => {
     e.preventDefault();
     try {
       setSubmitting(true);
-      await axios.post('${API_URL}/warehouses/register', form);
+      await axios.post(`${API_URL}/warehouses/register`, form);
       alert("Warehouse Registered Successfully!");
       setIsModalOpen(false);
       setForm({ warehouseCode: '', warehouseName: '', location: '', remarks: '' });

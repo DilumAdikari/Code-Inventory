@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Search, Loader2, X, Shirt, Package, Edit2 } from 'lucide-react';
+import { Plus, Search, Loader2, X, Shirt, Package, Edit2, Trash2 } from 'lucide-react';
 import { API_URL } from "../api/config";
+import { confirmDialog } from '../components/AppDialog';
 
 const FinishedGoods = () => {
   const [products, setProducts] = useState([]);
   const [uoms, setUoms] = useState([]);
   const [sizes, setSizes] = useState([]);
   const [colors, setColors] = useState([]);
-  
+
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [editingId, setEditingId] = useState(null); 
+  const [editingId, setEditingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const [form, setForm] = useState({
     itemCode: '',
@@ -27,10 +29,10 @@ const FinishedGoods = () => {
     try {
       setLoading(true);
       const [productsRes, uomsRes, sizesRes, colorsRes] = await Promise.all([
-        axios.get('${API_URL}/finished-goods').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/uoms').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/sizes').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/colors').catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/finished-goods`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/uoms`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/sizes`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/colors`).catch(() => ({ data: [] }))
       ]);
 
       const rawSizes = sizesRes.data;
@@ -107,6 +109,22 @@ const FinishedGoods = () => {
     setIsModalOpen(true);
   };
 
+  // Deletes a finished good after confirmation. The server refuses if it is already used in other records.
+  const handleDelete = async (p) => {
+    const label = p.itemName || p.itemCode || 'this item';
+    if (!(await confirmDialog(`"${label}" delete karanna da? Mema action eka undo karanna ba.`))) return;
+    try {
+      setDeletingId(p._id);
+      await axios.delete(`${API_URL}/finished-goods/${p._id}`);
+      setProducts((prev) => prev.filter((x) => x._id !== p._id));
+    } catch (err) {
+      console.error('Delete finished good failed:', err);
+      alert(err.response?.data?.message || 'Failed to delete finished good item.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.itemCode || !form.itemName || !form.uom) {
@@ -120,7 +138,7 @@ const FinishedGoods = () => {
         itemCode: form.itemCode,
         itemName: form.itemName,
         uom: form.uom,
-        sizes: selectedSizes, 
+        sizes: selectedSizes,
         colors: selectedColors
       };
 
@@ -129,9 +147,9 @@ const FinishedGoods = () => {
         await axios.put(`${API_URL}/finished-goods/${editingId}`, payload);
       } else {
         //  Create (POST) Request
-        await axios.post('${API_URL}/finished-goods/create', payload);
+        await axios.post(`${API_URL}/finished-goods/create`, payload);
       }
-      
+
       setForm({ itemCode: '', itemName: '', uom: '' });
       setSelectedColors([]);
       setSelectedSizes([]);
@@ -146,7 +164,7 @@ const FinishedGoods = () => {
     }
   };
 
-  const filteredProducts = products.filter(p => 
+  const filteredProducts = products.filter(p =>
     (p.itemCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (p.itemName || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -161,14 +179,14 @@ const FinishedGoods = () => {
 
   return (
     <div className="w-full space-y-6 animate-in fade-in duration-200 text-sm font-normal text-slate-700 font-sans tracking-wide">
-      
+
       {/* HEADER WIDGET */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0 w-full">
         <div>
           <h1 className="text-2xl font-normal text-slate-900 tracking-tight">Finished Goods Registry</h1>
           <p className="text-sm text-slate-500 font-normal mt-1">Configure and monitor manufactured garment styles, size specs, and variations.</p>
         </div>
-        <button 
+        <button
           onClick={handleOpenCreateModal}
           className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-normal text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-all gap-2 border-none cursor-pointer"
         >
@@ -180,11 +198,11 @@ const FinishedGoods = () => {
       <div className="bg-white p-4 rounded-xl border border-slate-200 flex items-center w-full">
         <div className="relative w-full max-w-sm">
           <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400"><Search size={18} /></span>
-          <input 
-            type="text" 
+          <input
+            type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by Item Code or Name..." 
+            placeholder="Search by Item Code or Name..."
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-normal focus:outline-none focus:border-slate-400 transition-all"
           />
         </div>
@@ -242,12 +260,19 @@ const FinishedGoods = () => {
                         )}
                       </div>
                     </td>
-                    <td className="p-4 text-center">
-                      <button 
+                    <td className="p-4 text-center whitespace-nowrap">
+                      <button
                         onClick={() => handleOpenEditModal(p)}
                         className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors border-none cursor-pointer inline-flex items-center gap-1"
                       >
                         <Edit2 size={12} /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(p)}
+                        disabled={deletingId === p._id}
+                        className="ml-1.5 px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-medium transition-colors border-none cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                      >
+                        {deletingId === p._id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Delete
                       </button>
                     </td>
                   </tr>
@@ -276,28 +301,28 @@ const FinishedGoods = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-5 text-sm bg-white">
-              
+
               <div className="space-y-1.5">
                 <label className="block text-xs text-slate-500 font-bold uppercase tracking-wider">Item Code *</label>
-                <input 
+                <input
                   type="text" required name="itemCode" value={form.itemCode} onChange={handleChange}
-                  placeholder="e.g., FG-TSHIRT-001" 
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-800/20 focus:border-emerald-800 transition-all" 
+                  placeholder="e.g., FG-TSHIRT-001"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-800/20 focus:border-emerald-800 transition-all"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label className="block text-xs text-slate-500 font-bold uppercase tracking-wider">Item Name *</label>
-                <input 
+                <input
                   type="text" required name="itemName" value={form.itemName} onChange={handleChange}
-                  placeholder="e.g., Slim Fit Mens T-Shirt" 
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-800/20 focus:border-emerald-800 transition-all" 
+                  placeholder="e.g., Slim Fit Mens T-Shirt"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-800/20 focus:border-emerald-800 transition-all"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label className="block text-xs text-slate-500 font-bold uppercase tracking-wider">UOM (Unit of Measure) *</label>
-                <select 
+                <select
                   required name="uom" value={form.uom} onChange={handleChange}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-800/20 focus:border-emerald-800 transition-all"
                 >
@@ -311,7 +336,7 @@ const FinishedGoods = () => {
               {/* Size Specs / Variants */}
               <div className="space-y-1.5">
                 <label className="block text-xs text-slate-500 font-bold uppercase tracking-wider">Size Specs / Variants (Optional)</label>
-                
+
                 {selectedSizes.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2">
                     {selectedSizes.map((sId, sIdx) => {
@@ -328,7 +353,7 @@ const FinishedGoods = () => {
                   </div>
                 )}
 
-                <select 
+                <select
                   onChange={handleSizeSelect}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-800/20 focus:border-emerald-800 transition-all text-slate-500"
                 >
@@ -348,7 +373,7 @@ const FinishedGoods = () => {
               {/* Available Colors / Variants */}
               <div className="space-y-1.5">
                 <label className="block text-xs text-slate-500 font-bold uppercase tracking-wider">Available Colors / Variants</label>
-                
+
                 {selectedColors.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2">
                     {selectedColors.map((cId, sIdx) => {
@@ -364,7 +389,7 @@ const FinishedGoods = () => {
                   </div>
                 )}
 
-                <select 
+                <select
                   onChange={handleColorSelect}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-800/20 focus:border-emerald-800 transition-all text-slate-500"
                 >

@@ -1,17 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, CheckCircle, AlertCircle, Loader2, X } from 'lucide-react';
+import { Plus, Search, CheckCircle, AlertCircle, Loader2, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { API_URL } from '../api/config';
+
+// Rows per page on the material issue list
+const ISSUE_PAGE_SIZE = 15;
 
 // Returns the value as an array, or an empty array if it is not one
 const toArray = (value) => (Array.isArray(value) ? value : []);
+
+// Local (Sri Lanka) දවස YYYY-MM-DD ලෙස
+const toLocalDay = (d) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  if (isNaN(dt)) return '';
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+};
 
 const MaterialIssuing = () => {
   const [issuesList, setIssuesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [plantFilter, setPlantFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [page, setPage] = useState(1);
   const navigate = useNavigate();
 
   const [productionOrders, setProductionOrders] = useState([]);
@@ -139,19 +154,45 @@ const MaterialIssuing = () => {
     return { label: 'Draft / Pending', style: 'bg-slate-50 text-slate-600 border-slate-200', icon: <AlertCircle size={12} /> };
   };
 
-  // Filters the issue list by search text and status
-  const search = searchTerm.toLowerCase();
+  // Filters the issue list by search text, status, plant and issue date range
+  const search = searchTerm.trim().toLowerCase();
+  const hasActiveFilters = !!(search || statusFilter !== 'All' || plantFilter || dateFrom || dateTo);
+
   const filteredIssues = toArray(issuesList).filter(issue => {
     const matchesSearch =
+      !search ||
       (issue.issueNo && issue.issueNo.toLowerCase().includes(search)) ||
       (issue.salesOrder?.orderRef && issue.salesOrder.orderRef.toLowerCase().includes(search)) ||
+      (issue.productionOrder?.productionOrderNo && issue.productionOrder.productionOrderNo.toLowerCase().includes(search)) ||
       (toArray(issue.items).some(item => item.material?.materialName?.toLowerCase().includes(search)));
 
     const statusDisplay = getStatusDisplay(issue.status).label;
     const matchesStatus = statusFilter === 'All' || statusDisplay === statusFilter;
 
-    return matchesSearch && matchesStatus;
+    const issuePlantId = String(issue.plant?._id || issue.plant || '');
+    const matchesPlant = !plantFilter || issuePlantId === plantFilter;
+
+    const day = toLocalDay(issue.issueDate || issue.createdAt);
+    const matchesFrom = !dateFrom || (day && day >= dateFrom);
+    const matchesTo = !dateTo || (day && day <= dateTo);
+
+    return matchesSearch && matchesStatus && matchesPlant && matchesFrom && matchesTo;
   });
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('All');
+    setPlantFilter('');
+    setDateFrom('');
+    setDateTo('');
+  };
+
+  // Going back to page 1 whenever a filter changes
+  useEffect(() => { setPage(1); }, [searchTerm, statusFilter, plantFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredIssues.length / ISSUE_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedIssues = filteredIssues.slice((safePage - 1) * ISSUE_PAGE_SIZE, safePage * ISSUE_PAGE_SIZE);
 
   // Finds the costing number for an issue through its production order
   const getCostingNoForIssue = (issue) => {
@@ -199,25 +240,71 @@ const MaterialIssuing = () => {
       </div>
 
       {/* FILTER BAR */}
-      <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-center">
-        <div className="relative w-full md:w-80">
+      <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+        <div className="md:col-span-4 relative">
           <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-            <Search size={18} />
+            <Search size={16} />
           </span>
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by Issue ID, Material or SO..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all"
+            placeholder="Search by Issue ID, Material, SO or PO..."
+            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 transition-all"
           />
         </div>
-        <div className="flex gap-2 self-start md:self-auto">
+
+        <div className="md:col-span-2">
+          <select
+            value={plantFilter}
+            onChange={(e) => setPlantFilter(e.target.value)}
+            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800 cursor-pointer"
+          >
+            <option value="">All plants</option>
+            {factories.map(f => (
+              <option key={f._id} value={f._id}>{f.name || f.factoryCode}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="md:col-span-2">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            title="Issue date from"
+            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800"
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            title="Issue date to"
+            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-800"
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <button
+            type="button"
+            onClick={clearFilters}
+            disabled={!hasActiveFilters}
+            className="w-full px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer border-none"
+          >
+            Clear filters
+          </button>
+        </div>
+
+        {/* Status pills */}
+        <div className="md:col-span-12 flex flex-wrap gap-2">
           {['All', 'Fully Issued', 'Pending Approval', 'Draft / Pending'].map(f => (
             <button
               key={f}
               onClick={() => setStatusFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${statusFilter === f ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${statusFilter === f ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent'}`}
             >
               {f}
             </button>
@@ -243,7 +330,7 @@ const MaterialIssuing = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filteredIssues.length > 0 ? filteredIssues.map((issue) => {
+              {pagedIssues.length > 0 ? pagedIssues.map((issue) => {
                 const statusInfo = getStatusDisplay(issue.status);
                 const issueIdLabel = issue.issueNo || `ISS-${issue._id?.slice(-6).toUpperCase()}`;
                 const plantLabel = issue.plant?.name || issue.plant?.factoryCode || 'N/A';
@@ -281,11 +368,37 @@ const MaterialIssuing = () => {
                 );
               }) : (
                 <tr>
-                  <td colSpan="9" className="py-16 text-center text-slate-400 italic">No material issuing records found.</td>
+                  <td colSpan="9" className="py-16 text-center text-slate-400 italic">
+                    {issuesList.length > 0 ? 'No material issues match the selected filters.' : 'No material issuing records found.'}
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* PAGINATION */}
+        <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-500">
+          <span>{filteredIssues.length.toLocaleString()} of {issuesList.length.toLocaleString()} material issues</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(p - 1, 1))}
+              disabled={safePage <= 1}
+              className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1 bg-white cursor-pointer"
+            >
+              <ChevronLeft size={14} /> Prev
+            </button>
+            <span className="px-2">Page {safePage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+              disabled={safePage >= totalPages}
+              className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 flex items-center gap-1 bg-white cursor-pointer"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       </div>
 
