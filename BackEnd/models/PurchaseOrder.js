@@ -1,67 +1,100 @@
 const mongoose = require('mongoose');
 
 const purchaseOrderSchema = new mongoose.Schema({
-  purchaseOrderNo: { 
-    type: String, 
-    required: true, 
-    unique: true 
+  purchaseOrderNo: {
+    type: String,
+    required: true,
+    unique: true
   },
-  productionOrder: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'ProductionOrder', 
-    required: true 
+
+  
+  productionOrder: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ProductionOrder',
+    default: null
   },
-  supplierName: { 
-    type: String, 
-    default: 'General Supplier' 
+
+  supplierName: {
+    type: String,
+    default: 'General Supplier'
   },
-  orderDate: { 
-    type: Date, 
-    default: Date.now 
+
+  orderDate: {
+    type: Date,
+    default: Date.now
   },
-  expectedDeliveryDate: { 
-    type: Date 
+
+  expectedDeliveryDate: {
+    type: Date
   },
-  // ✅ workflow for approval routing
-  workflowId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Workflow', 
-    default: null 
+
+  
+  workflowId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workflow',
+    default: null
   },
-  // ✅ who created this PO
-  createdBy: { 
-    type: String, 
-    default: 'SYSTEM' 
+
+ 
+  createdBy: {
+    type: String,
+    default: 'SYSTEM'
   },
-  status: { 
-    type: String, 
-    enum: ['Draft', 'Pending Approval', 'Pending', 'Approved', 'Received', 'Cancelled'], 
-    default: 'Draft' 
+
+  status: {
+    type: String,
+    enum: ['Draft', 'Pending Approval', 'Pending', 'Approved', 'Received', 'Cancelled'],
+    default: 'Draft'
   },
+
   items: [
     {
-      // ✅ FIXED — was ref: 'FinishedGood' which is wrong
-      // Purchase order items come from BOM which uses Material model
-      material: { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Material' 
+     
+      
+      material: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Material',
+        default: null
       },
-      materialName: { type: String },
-      itemCode: { type: String },
-      colorName: { type: String },
-      uom: { type: String },
-      orderedQty: { type: Number, required: true },
+      materialId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Material',
+        default: null
+      },
+      materialName: { type: String, default: '' },
+      itemCode: { type: String, default: '' },
+
+     
+      colorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Color',
+        default: null
+      },
+      colorName: { type: String, default: '' },
+      sizeId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Size',
+        default: null
+      },
+      sizeName: { type: String, default: '' },
+
+      uom: { type: String, default: '' },
+      orderedQty: { type: Number, required: true, default: 0 },
       unitPrice: { type: Number, default: 0 },
-      // ✅ added totalPrice per line for easy calculation
+
+      
       totalPrice: { type: Number, default: 0 }
     }
   ],
-  totalAmount: { 
-    type: Number, 
-    default: 0 
+
+  totalAmount: {
+    type: Number,
+    default: 0
   },
-  remarks: { 
-    type: String 
+
+  remarks: {
+    type: String,
+    default: ''
   }
 }, { timestamps: true });
 
