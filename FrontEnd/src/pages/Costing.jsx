@@ -8,6 +8,15 @@ import { API_URL } from '../api/config';
 // Letters, numbers, "-" and "/" only, max 20 characters
 const COSTING_NO_REGEX = /^[A-Z0-9\-\/]{1,20}$/;
 
+// Status choices for the list filter
+const STATUS_FILTER_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  { value: 'Draft', label: 'Draft' },
+  { value: 'Pending Approval', label: 'Pending Approval' },
+  { value: 'Completed', label: 'Completed' },
+  { value: 'Rejected', label: 'Rejected' },
+];
+
 // Returns the value as an array, or an empty array if it is not one
 const toArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -108,6 +117,12 @@ const Costing = () => {
   const [costingList, setCostingList] = useState([]);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 15;
+
+  // List filters
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [salesOrders, setSalesOrders] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -175,10 +190,39 @@ const Costing = () => {
 
   useEffect(() => { loadInitialData(); }, []);
 
-  // Client-side paging for the costing list
-  const totalPages = Math.max(1, Math.ceil(costingList.length / PAGE_SIZE));
+  // Applies the search, status and date filters to the costing list
+  const normalizedSearch = searchText.trim().toLowerCase();
+  const hasActiveFilters = !!(normalizedSearch || statusFilter || dateFrom || dateTo);
+
+  const filteredCosting = costingList.filter((c) => {
+    if (normalizedSearch) {
+      const costingNoText = String(c.costingNo || '').toLowerCase();
+      const soRefText = String(
+        c.salesOrder && typeof c.salesOrder === 'object' ? (c.salesOrder.orderRef || '') : ''
+      ).toLowerCase();
+      if (!costingNoText.includes(normalizedSearch) && !soRefText.includes(normalizedSearch)) return false;
+    }
+    if (statusFilter && c.status !== statusFilter) return false;
+
+    const day = String(c.costingDate || '').slice(0, 10);
+    if (dateFrom && (!day || day < dateFrom)) return false;
+    if (dateTo && (!day || day > dateTo)) return false;
+    return true;
+  });
+
+  const clearFilters = () => {
+    setSearchText('');
+    setStatusFilter('');
+    setDateFrom('');
+    setDateTo('');
+  };
+
+  // Client-side paging on the filtered list; going back to page 1 whenever a filter changes
+  useEffect(() => { setPage(1); }, [searchText, statusFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCosting.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pagedCosting = costingList.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pagedCosting = filteredCosting.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   // Opens an existing costing: Completed ones open in print view, others open in the editable grid
   const handleRowClick = (costing) => {
@@ -463,6 +507,65 @@ const Costing = () => {
         )}
       </div>
 
+      {/* --- FILTERS --- */}
+      {isListView && (
+        <div className="bg-white rounded-xl border border-slate-100 p-4 grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+          <div className="md:col-span-4 relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Search costing no or sales order ref..."
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800"
+            >
+              {STATUS_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || 'all'} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              title="Costing date from"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              title="Costing date to"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-800"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <button
+              type="button"
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              className="w-full px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Clear filters
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* --- 1. LIST VIEW --- */}
       {isListView && (
         <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
@@ -499,7 +602,7 @@ const Costing = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan="6" className="py-16 text-center text-slate-400 italic">No active costing matrix records registered in database.</td>
+                  <td colSpan="6" className="py-16 text-center text-slate-400 italic">{costingList.length > 0 ? 'No records match the selected filters.' : 'No active costing matrix records registered in database.'}</td>
                 </tr>
               )}
             </tbody>
@@ -507,7 +610,7 @@ const Costing = () => {
 
           {/* PAGINATION */}
           <div className="p-4 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
-            <span>{costingList.length.toLocaleString()} costing records</span>
+            <span>{filteredCosting.length.toLocaleString()} of {costingList.length.toLocaleString()} costing records</span>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(p - 1, 1))}
