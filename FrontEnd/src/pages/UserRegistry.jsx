@@ -25,7 +25,7 @@ const UserRegistry = () => {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('${API_URL}/auth/users');
+      const res = await axios.get(`${API_URL}/auth/users`);
       setUsersList(res.data || []);
       setLoading(false);
     } catch (err) {
