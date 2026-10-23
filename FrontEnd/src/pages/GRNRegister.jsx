@@ -22,7 +22,7 @@ const GRNRegister = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  const itemsPerPage = 15;
 
   const [isListView, setIsListView] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -526,7 +526,7 @@ const GRNRegister = () => {
         </div>
       )}
 
-      {/* Pagination Controls (20 items per page) */}
+      {/* Pagination Controls (15 items per page) */}
       {isListView && totalPages > 1 && (
         <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-100 shadow-xs">
           <div className="text-slate-400 text-xs">
