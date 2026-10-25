@@ -5,6 +5,63 @@ import { Plus, Trash2, ArrowLeft, Loader2, Check, AlertCircle, CheckCircle2, X, 
 import { colorApi } from '../api/colorApi';
 import { API_URL } from "../api/config";
 
+// Formats a date as YYYY-MM-DD, or '-' if missing or invalid
+const fmtDate = (value) => {
+  const d = new Date(value);
+  return isNaN(d) ? '-' : d.toISOString().split('T')[0];
+};
+
+// Print-only sheet: hides the app chrome and shows just the sales order document
+const SO_PRINT_CSS = `
+#so-print-area { display: none; }
+@media print {
+  body * { visibility: hidden !important; }
+  #so-print-area, #so-print-area * { visibility: visible !important; }
+  #so-print-area {
+    display: block !important;
+    position: absolute !important;
+    left: 0; top: 0; width: 100%;
+    margin: 0; padding: 0;
+    background: #ffffff; color: #0f172a;
+    font-size: 10.5pt;
+  }
+  #so-print-area .so-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 12px;
+  }
+  #so-print-area .so-title { font-size: 17pt; font-weight: 800; margin: 0; letter-spacing: 0.04em; }
+  #so-print-area .so-sub { font-size: 9pt; color: #475569; margin: 3px 0 0; font-weight: 600; letter-spacing: 0.08em; }
+  #so-print-area .so-meta { text-align: right; font-size: 9.5pt; line-height: 1.6; }
+  #so-print-area .so-meta strong { font-weight: 700; }
+  #so-print-area .so-info {
+    display: flex; justify-content: space-between; font-size: 9.5pt;
+    border: 1px solid #cbd5e1; padding: 8px 10px; margin-bottom: 12px;
+  }
+  #so-print-area table { width: 100%; border-collapse: collapse; }
+  #so-print-area thead { display: table-header-group; }
+  #so-print-area tr { page-break-inside: avoid; }
+  #so-print-area th, #so-print-area td { border: 1px solid #94a3b8; padding: 6px 8px; font-size: 9.5pt; }
+  #so-print-area th {
+    background: #f1f5f9 !important; text-transform: uppercase; font-size: 8.5pt; letter-spacing: 0.04em;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #so-print-area .r { text-align: right; }
+  #so-print-area .c { text-align: center; }
+  #so-print-area tfoot td { font-weight: 700; background: #f8fafc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #so-print-area .so-total {
+    display: flex; justify-content: flex-end; gap: 24px; margin-top: 10px; font-size: 11pt; font-weight: 800;
+  }
+  #so-print-area .so-sign {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 36px; page-break-inside: avoid;
+  }
+  #so-print-area .so-sign div {
+    border-top: 1px solid #0f172a; padding-top: 4px; text-align: center; font-size: 8.5pt; font-weight: 700; text-transform: uppercase;
+  }
+  #so-print-area .so-footer { margin-top: 18px; font-size: 8pt; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 6px; }
+  @page { size: A4 portrait; margin: 12mm; }
+}
+`;
+
 const SalesOrderDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -270,6 +327,8 @@ const SalesOrderDetails = () => {
   return (
     <div className="w-full space-y-6 text-sm font-normal text-slate-700 relative animate-in fade-in duration-200">
       
+      <style>{SO_PRINT_CSS}</style>
+
       {toast.show && (
         <div className="fixed top-5 right-5 z-50 animate-in slide-in-from-top-5 duration-300">
           <div className={`flex items-center gap-3 px-5 py-3.5 rounded-xl border shadow-lg text-sm font-medium min-w-[320px] ${
@@ -543,6 +602,77 @@ const SalesOrderDetails = () => {
               {actionLoading ? <Loader2 className="animate-spin" size={16} /> : <><Check size={16} /> Submit For Approval</>}
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* PRINT SHEET (only shown when printing) */}
+      <div id="so-print-area">
+        <div className="so-header">
+          <div>
+            <h1 className="so-title">Elisha Clothing (Pvt) Ltd</h1>
+            <p className="so-sub">SALES ORDER</p>
+          </div>
+          <div className="so-meta">
+            <div>SO NO: <strong>{order.orderRef || '-'}</strong></div>
+            <div>LOGGED DATE: <strong>{fmtDate(order.createdAt)}</strong></div>
+            <div>DELIVERY DATE: <strong>{fmtDate(order.shipmentDate)}</strong></div>
+            <div>STATUS: <strong>{order.status || '-'}</strong></div>
+          </div>
+        </div>
+
+        <div className="so-info">
+          <div>CUSTOMER / BUYER: <strong>{order.buyerName || '-'}</strong></div>
+          <div>TOTAL QTY: <strong>{(order.items || []).reduce((s, i) => s + Number(i.quantity || 0), 0).toLocaleString()}</strong></div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th className="c" style={{ width: '6%' }}>#</th>
+              <th>Material</th>
+              <th>Colour</th>
+              <th className="c">Size</th>
+              <th className="r">Unit Price (LKR)</th>
+              <th className="r">Qty</th>
+              <th className="r">Line Total (LKR)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(order.items || []).map((item, idx) => (
+              <tr key={item._id || idx}>
+                <td className="c">{idx + 1}</td>
+                <td>{getMaterialDisplayName(item)}</td>
+                <td>{item.color?.name || item.color?.colorName || 'Default'}</td>
+                <td className="c">{getSizeDisplayName(item.size)}</td>
+                <td className="r">{(item.unitPrice || 0).toLocaleString()}</td>
+                <td className="r">{(item.quantity || 0).toLocaleString()}</td>
+                <td className="r">{((item.quantity || 0) * (item.unitPrice || 0)).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan="5" className="r">TOTAL</td>
+              <td className="r">{(order.items || []).reduce((s, i) => s + Number(i.quantity || 0), 0).toLocaleString()}</td>
+              <td className="r">{(order.totalAmount || 0).toLocaleString()}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div className="so-total">
+          <span>GROSS TOTAL AMOUNT:</span>
+          <span>LKR {(order.totalAmount || 0).toLocaleString()}</span>
+        </div>
+
+        <div className="so-sign">
+          <div>Prepared By</div>
+          <div>Checked By</div>
+          <div>Approved By</div>
+          <div>Customer Acknowledgement</div>
+        </div>
+
+        <div className="so-footer">
+          Printed by {localStorage.getItem('username') || 'DILUM'} on {new Date().toLocaleString()}
         </div>
       </div>
     </div>

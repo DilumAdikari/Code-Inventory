@@ -4,6 +4,35 @@ import axios from 'axios';
 import { API_URL } from "../api/config";
 import { confirmDialog } from '../components/AppDialog';
 
+// Print-only layout: shows just the GRN document, hides the app sidebar / header / buttons
+const GRN_PRINT_CSS = `
+@media print {
+  body * { visibility: hidden !important; }
+  #grn-print-area, #grn-print-area * { visibility: visible !important; }
+  #grn-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: #0f172a !important;
+  }
+  .no-print { display: none !important; }
+  #grn-print-area table { border-collapse: collapse !important; width: 100% !important; }
+  #grn-print-area thead { display: table-header-group; }
+  #grn-print-area tr { page-break-inside: avoid; }
+  #grn-print-area th,
+  #grn-print-area td { border-color: #cbd5e1 !important; padding: 6px 8px !important; }
+  #grn-print-area th { background: #f1f5f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { size: A4 portrait; margin: 12mm; }
+}
+`;
+
 const GRNRegister = () => {
   const [grnList, setGrnList] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -822,11 +851,12 @@ const GRNRegister = () => {
       {/* PRINT VIEW */}
       {isPrintView && (
         <div className="space-y-6">
+          <style>{GRN_PRINT_CSS}</style>
           <div className="flex justify-between items-center no-print">
             <button onClick={resetViews} className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-800 font-medium text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-lg cursor-pointer"><ArrowLeft size={14} /> Back</button>
             <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 text-white bg-slate-900 hover:bg-slate-800 font-medium text-xs px-4 py-2 rounded-lg shadow-sm cursor-pointer"><Printer size={14} /> Print GRN</button>
           </div>
-          <div className="bg-white rounded-xl p-8 border border-slate-200 max-w-4xl mx-auto space-y-6 shadow-xs text-slate-800">
+          <div id="grn-print-area" className="bg-white rounded-xl p-8 border border-slate-200 max-w-4xl mx-auto space-y-6 shadow-xs text-slate-800">
             <div className="flex justify-between border-b pb-6 border-slate-100">
               <div>
                 <h1 className="text-xl font-bold text-slate-900 uppercase tracking-wide">Elisha Clothing Pvt Ltd</h1>
