@@ -4,6 +4,35 @@ import axios from 'axios';
 import { API_URL } from "../api/config";
 import { confirmDialog } from '../components/AppDialog';
 
+// Print-only layout: shows just the GRN document, hides the app sidebar / header / buttons
+const GRN_PRINT_CSS = `
+@media print {
+  body * { visibility: hidden !important; }
+  #grn-print-area, #grn-print-area * { visibility: visible !important; }
+  #grn-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: #0f172a !important;
+  }
+  .no-print { display: none !important; }
+  #grn-print-area table { border-collapse: collapse !important; width: 100% !important; }
+  #grn-print-area thead { display: table-header-group; }
+  #grn-print-area tr { page-break-inside: avoid; }
+  #grn-print-area th,
+  #grn-print-area td { border-color: #cbd5e1 !important; padding: 6px 8px !important; }
+  #grn-print-area th { background: #f1f5f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { size: A4 portrait; margin: 12mm; }
+}
+`;
+
 const GRNRegister = () => {
   const [grnList, setGrnList] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -50,6 +79,11 @@ const GRNRegister = () => {
 
   const [items, setItems] = useState([]);
   const currentUsername = localStorage.getItem('username') || 'ADMIN';
+
+  // Supplier records may store the display name under different field names
+  const supplierNameOf = (s) => (s && typeof s === 'object'
+    ? (s.supplierName || s.name || s.companyName || s.supplier_name || '')
+    : '');
 
   const loadGRNData = async () => {
     try {
@@ -188,7 +222,7 @@ const GRNRegister = () => {
   const handleRowClick = (grn) => {
     setGrnId(grn._id);
     setGrnNo(grn.grnNo || '');
-    setGrnSupplierName(grn.supplier?.supplierName || '');
+    setGrnSupplierName(supplierNameOf(grn.supplier));
     setActiveStatus(grn.status || 'Draft');
     const warehouseId = grn.items?.[0]?.storeLocation?._id || grn.items?.[0]?.storeLocation || '';
 
@@ -608,7 +642,7 @@ const GRNRegister = () => {
                         <select required value={form.purchaseOrder} onChange={(e) => {
                           const poId = e.target.value;
                           const matchedPO = approvedPOs.find(p => p._id === poId);
-                          const matchedSupplier = suppliers.find(s => String(s._id) === String(matchedPO?.supplier) || s.supplierName === matchedPO?.supplierName);
+                          const matchedSupplier = suppliers.find(s => String(s._id) === String(matchedPO?.supplier) || supplierNameOf(s) === matchedPO?.supplierName);
                           setForm({ ...form, purchaseOrder: poId, supplier: matchedSupplier?._id || '' });
                         }} className="w-full px-3 py-2 bg-slate-50 border rounded-lg text-sm h-10 focus:outline-none font-bold text-slate-800">
                           <option value="">Choose Approved PO</option>
@@ -817,11 +851,12 @@ const GRNRegister = () => {
       {/* PRINT VIEW */}
       {isPrintView && (
         <div className="space-y-6">
+          <style>{GRN_PRINT_CSS}</style>
           <div className="flex justify-between items-center no-print">
             <button onClick={resetViews} className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-800 font-medium text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-lg cursor-pointer"><ArrowLeft size={14} /> Back</button>
             <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 text-white bg-slate-900 hover:bg-slate-800 font-medium text-xs px-4 py-2 rounded-lg shadow-sm cursor-pointer"><Printer size={14} /> Print GRN</button>
           </div>
-          <div className="bg-white rounded-xl p-8 border border-slate-200 max-w-4xl mx-auto space-y-6 shadow-xs text-slate-800">
+          <div id="grn-print-area" className="bg-white rounded-xl p-8 border border-slate-200 max-w-4xl mx-auto space-y-6 shadow-xs text-slate-800">
             <div className="flex justify-between border-b pb-6 border-slate-100">
               <div>
                 <h1 className="text-xl font-bold text-slate-900 uppercase tracking-wide">Elisha Clothing Pvt Ltd</h1>
@@ -835,7 +870,7 @@ const GRNRegister = () => {
               </div>
             </div>
             <div className="bg-slate-50 p-4 rounded-lg text-xs space-y-1">
-              <div>Supplier: <span className="font-bold text-slate-900">{suppliers.find(s => String(s._id) === String(form.supplier))?.supplierName || grnSupplierName || 'N/A'}</span></div>
+              <div>Supplier: <span className="font-bold text-slate-900">{supplierNameOf(suppliers.find(s => String(s._id) === String(form.supplier))) || grnSupplierName || 'N/A'}</span></div>
               <div>Vehicle: <span className="font-semibold text-slate-700 uppercase">{form.vehicleNo || 'N/A'}</span></div>
             </div>
             <table className="w-full text-left text-xs border-collapse">
