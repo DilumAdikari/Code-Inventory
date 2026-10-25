@@ -25,9 +25,9 @@ const GrnReturn = () => {
     try {
       setLoading(true);
       const [retRes, grnRes, wfRes] = await Promise.all([
-        axios.get('${API_URL}/grn-returns').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/grn').catch(() => ({ data: [] })),
-        axios.get('${API_URL}/workflows').catch(() => ({ data: [] }))
+        axios.get(`${API_URL}/grn-returns`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/grn`).catch(() => ({ data: [] })),
+        axios.get(`${API_URL}/workflows`).catch(() => ({ data: [] }))
       ]);
 
       setReturnsList(Array.isArray(retRes.data) ? retRes.data : (retRes.data?.data || []));
@@ -67,7 +67,7 @@ const GrnReturn = () => {
 
     try {
       setSubmitting(true);
-      const grnRes = await axios.get('${API_URL}/grn');
+      const grnRes = await axios.get(`${API_URL}/grn`);
       const allGrns = Array.isArray(grnRes.data) ? grnRes.data : (grnRes.data?.data || []);
       const targetGrn = allGrns.find(g => g.grnNo === selectedGrn);
 
@@ -122,7 +122,7 @@ const GrnReturn = () => {
         returnedBy: currentUsername
       };
 
-      await axios.post('${API_URL}/grn-returns/initialize', payload);
+      await axios.post(`${API_URL}/grn-returns/initialize`, payload);
       alert("GRN Return saved as Draft successfully!");
       
       setIsModalOpen(false);
