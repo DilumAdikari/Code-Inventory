@@ -49,7 +49,7 @@ router.get('/', async (req, res) => {
   try {
     const grnList = await GRN.find()
       .populate({ path: 'supplier', select: 'supplierName', options: { strictPopulate: false } })
-      .populate({ path: 'grnType', select: 'typeName typeCode sourceType', options: { strictPopulate: false } })
+      .populate({ path: 'grnType', model: 'TransactionType', select: 'typeName code sourceType', options: { strictPopulate: false } })
       .populate({ path: 'workflow', select: 'code', options: { strictPopulate: false } })
       .populate({ path: 'purchaseOrder', options: { strictPopulate: false } })
       .populate({ path: 'materialIssuing', options: { strictPopulate: false } })
@@ -190,7 +190,13 @@ router.post('/save', async (req, res) => {
     if (!grnDoc) {
       const count = await GRN.countDocuments();
       const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '').slice(2);
-      const generatedGrnNo = `GRN-${dateStr}-${(count + 1).toString().padStart(4, '0')}`;
+      let seq = count + 1;
+      let generatedGrnNo = `GRN-${dateStr}-${seq.toString().padStart(4, '0')}`;
+      // Skip numbers that already exist (count-based numbering can collide after deletes)
+      while (await GRN.exists({ grnNo: generatedGrnNo })) {
+        seq += 1;
+        generatedGrnNo = `GRN-${dateStr}-${seq.toString().padStart(4, '0')}`;
+      }
 
       grnDoc = new GRN({
         grnNo: generatedGrnNo,
@@ -205,7 +211,9 @@ router.post('/save', async (req, res) => {
     }
 
     // If saved directly as Completed, update stock
-    await processGrnStockUpdate(grnDoc);
+    if (grnDoc.status === 'Completed') {
+      await processGrnStockUpdate(grnDoc);
+    }
 
     return res.status(200).json(grnDoc);
   } catch (err) {

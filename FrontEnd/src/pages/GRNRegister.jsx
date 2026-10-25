@@ -32,6 +32,8 @@ const GRNRegister = () => {
   const [initLoading, setInitLoading] = useState(false);
 
   const [grnId, setGrnId] = useState(null);
+  const [grnNo, setGrnNo] = useState('');
+  const [grnSupplierName, setGrnSupplierName] = useState('');
   const [activeStatus, setActiveStatus] = useState('Draft');
   const [form, setForm] = useState({
     grnDate: new Date().toISOString().split('T')[0],
@@ -185,6 +187,8 @@ const GRNRegister = () => {
 
   const handleRowClick = (grn) => {
     setGrnId(grn._id);
+    setGrnNo(grn.grnNo || '');
+    setGrnSupplierName(grn.supplier?.supplierName || '');
     setActiveStatus(grn.status || 'Draft');
     const warehouseId = grn.items?.[0]?.storeLocation?._id || grn.items?.[0]?.storeLocation || '';
 
@@ -244,8 +248,8 @@ const GRNRegister = () => {
           const matObj = poItem.material;
           const matId = matObj && typeof matObj === 'object' ? (matObj._id || matObj.id) : matObj;
           const matchedObj = searchableItems.find(m => String(m._id) === String(matId));
-          const matName = matchedObj?.itemName || (typeof matObj === 'object' ? (matObj.itemName || matObj.materialName) : null) || poItem.materialName || 'Material';
-          const matCode = matchedObj?.itemCode || (typeof matObj === 'object' ? (matObj.itemCode || matObj.materialCode) : null) || poItem.itemCode || 'MAT';
+          const matName = matchedObj?.itemName || (matObj && typeof matObj === 'object' ? (matObj.itemName || matObj.materialName) : null) || poItem.materialName || 'Material';
+          const matCode = matchedObj?.itemCode || (matObj && typeof matObj === 'object' ? (matObj.itemCode || matObj.materialCode) : null) || poItem.itemCode || 'MAT';
           const qty = Number(poItem.orderedQty || 0);
           const price = Number(poItem.unitPrice || 0);
           const hasColors = materialHasColors(matId);
@@ -271,7 +275,10 @@ const GRNRegister = () => {
         grandTotal: initialItems.reduce((sum, i) => sum + (i.totalPrice || 0), 0),
         createdBy: currentUsername
       });
-      if (res.data && res.data._id) setGrnId(res.data._id);
+      if (res.data && res.data._id) {
+        setGrnId(res.data._id);
+        setGrnNo(res.data.grnNo || '');
+      }
 
       setActiveStatus('Draft');
       setIsModalOpen(false);
@@ -279,7 +286,8 @@ const GRNRegister = () => {
       setIsGridExpanded(true);
       setItems(initialItems);
     } catch (err) {
-      alert("Failed to initialize GRN.");
+      console.error("❌ GRN init failed:", err);
+      alert(err.response?.data?.message || "Failed to initialize GRN.");
     } finally {
       setInitLoading(false);
     }
@@ -412,6 +420,8 @@ const GRNRegister = () => {
 
   const resetViews = () => {
     setGrnId(null);
+    setGrnNo('');
+    setGrnSupplierName('');
     setIsGridExpanded(false);
     setIsPrintView(false);
     setIsModalOpen(false);
@@ -511,7 +521,7 @@ const GRNRegister = () => {
               {currentGrns.length > 0 ? currentGrns.map((g) => (
                 <tr key={g._id} onClick={() => handleRowClick(g)} className="hover:bg-slate-50 cursor-pointer transition-colors">
                   <td className="py-4 px-6 font-bold text-emerald-950">{g.grnNo}</td>
-                  <td className="py-4 px-6 font-semibold text-emerald-800">{g.grnType?.typeName || 'General'}</td>
+                  <td className="py-4 px-6 font-semibold text-emerald-800">{g.grnType?.typeName || transactionTypes.find(t => String(t._id) === String(g.grnType?._id || g.grnType))?.typeName || 'General'}</td>
                   <td className="py-4 px-6 text-slate-500">{g.grnDate}</td>
                   <td className="py-4 px-6 text-slate-600 font-semibold">{g.invoiceNo}</td>
                   <td className="py-4 px-6 font-bold text-slate-800">LKR {g.grandTotal?.toLocaleString()}</td>
@@ -598,7 +608,8 @@ const GRNRegister = () => {
                         <select required value={form.purchaseOrder} onChange={(e) => {
                           const poId = e.target.value;
                           const matchedPO = approvedPOs.find(p => p._id === poId);
-                          setForm({ ...form, purchaseOrder: poId, supplier: matchedPO?.supplier || '' });
+                          const matchedSupplier = suppliers.find(s => String(s._id) === String(matchedPO?.supplier) || s.supplierName === matchedPO?.supplierName);
+                          setForm({ ...form, purchaseOrder: poId, supplier: matchedSupplier?._id || '' });
                         }} className="w-full px-3 py-2 bg-slate-50 border rounded-lg text-sm h-10 focus:outline-none font-bold text-slate-800">
                           <option value="">Choose Approved PO</option>
                           {approvedPOs.map(po => {
@@ -817,13 +828,14 @@ const GRNRegister = () => {
                 <p className="text-xs text-slate-400 mt-1">Goods Received Note (GRN)</p>
               </div>
               <div className="text-right text-xs space-y-1">
+                <div>GRN NO: <span className="font-bold text-slate-900">{grnNo || 'N/A'}</span></div>
                 <div>DATE: <span className="font-medium">{form.grnDate}</span></div>
                 <div>INVOICE: <span className="font-bold text-slate-900">{form.invoiceNo}</span></div>
                 <div>BY: <span className="font-semibold uppercase text-emerald-900">{currentUsername}</span></div>
               </div>
             </div>
             <div className="bg-slate-50 p-4 rounded-lg text-xs space-y-1">
-              <div>Supplier: <span className="font-bold text-slate-900">{suppliers.find(s => s._id === form.supplier)?.supplierName || 'N/A'}</span></div>
+              <div>Supplier: <span className="font-bold text-slate-900">{suppliers.find(s => String(s._id) === String(form.supplier))?.supplierName || grnSupplierName || 'N/A'}</span></div>
               <div>Vehicle: <span className="font-semibold text-slate-700 uppercase">{form.vehicleNo || 'N/A'}</span></div>
             </div>
             <table className="w-full text-left text-xs border-collapse">
