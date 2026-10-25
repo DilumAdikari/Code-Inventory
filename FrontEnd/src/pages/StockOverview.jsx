@@ -377,7 +377,7 @@ const StockOverview = () => {
           </div>
         ) : !viewed ? (
           <div className="p-16 text-center text-slate-400 italic">
-            Filters select karala <strong className="not-italic text-slate-600">View</strong> click karanna.
+           
           </div>
         ) : rows.length === 0 ? (
           <div className="p-16 text-center text-slate-400 italic">
