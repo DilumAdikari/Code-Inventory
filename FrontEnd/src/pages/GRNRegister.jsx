@@ -51,6 +51,11 @@ const GRNRegister = () => {
   const [items, setItems] = useState([]);
   const currentUsername = localStorage.getItem('username') || 'ADMIN';
 
+  // Supplier records may store the display name under different field names
+  const supplierNameOf = (s) => (s && typeof s === 'object'
+    ? (s.supplierName || s.name || s.companyName || s.supplier_name || '')
+    : '');
+
   const loadGRNData = async () => {
     try {
       setLoading(true);
@@ -188,7 +193,7 @@ const GRNRegister = () => {
   const handleRowClick = (grn) => {
     setGrnId(grn._id);
     setGrnNo(grn.grnNo || '');
-    setGrnSupplierName(grn.supplier?.supplierName || '');
+    setGrnSupplierName(supplierNameOf(grn.supplier));
     setActiveStatus(grn.status || 'Draft');
     const warehouseId = grn.items?.[0]?.storeLocation?._id || grn.items?.[0]?.storeLocation || '';
 
@@ -608,7 +613,7 @@ const GRNRegister = () => {
                         <select required value={form.purchaseOrder} onChange={(e) => {
                           const poId = e.target.value;
                           const matchedPO = approvedPOs.find(p => p._id === poId);
-                          const matchedSupplier = suppliers.find(s => String(s._id) === String(matchedPO?.supplier) || s.supplierName === matchedPO?.supplierName);
+                          const matchedSupplier = suppliers.find(s => String(s._id) === String(matchedPO?.supplier) || supplierNameOf(s) === matchedPO?.supplierName);
                           setForm({ ...form, purchaseOrder: poId, supplier: matchedSupplier?._id || '' });
                         }} className="w-full px-3 py-2 bg-slate-50 border rounded-lg text-sm h-10 focus:outline-none font-bold text-slate-800">
                           <option value="">Choose Approved PO</option>
@@ -835,7 +840,7 @@ const GRNRegister = () => {
               </div>
             </div>
             <div className="bg-slate-50 p-4 rounded-lg text-xs space-y-1">
-              <div>Supplier: <span className="font-bold text-slate-900">{suppliers.find(s => String(s._id) === String(form.supplier))?.supplierName || grnSupplierName || 'N/A'}</span></div>
+              <div>Supplier: <span className="font-bold text-slate-900">{supplierNameOf(suppliers.find(s => String(s._id) === String(form.supplier))) || grnSupplierName || 'N/A'}</span></div>
               <div>Vehicle: <span className="font-semibold text-slate-700 uppercase">{form.vehicleNo || 'N/A'}</span></div>
             </div>
             <table className="w-full text-left text-xs border-collapse">
